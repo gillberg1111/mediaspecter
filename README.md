@@ -182,7 +182,8 @@ Open `http://localhost:5000` in your web browser to access the dashboard.
 - 📺 **Visual Catalog**: Pulls poster artwork directly from Plex/Jellyfin/Emby with a custom image proxy.
 - ⚡ **Manual Action Confirmation**: Confirmation modal before executing any "Spektor" or "Restore" operations.
 - 📝 **Live Activity Log Console**: Follow log output in real-time.
-- ⚙️ **Config Manager**: Edit your `config.yaml` as JSON directly in the browser.
+- ⚙️ **Config Manager**: Edit your configuration directly in the browser via structured Settings fields.
+- 📲 **Installable (PWA)**: Add to Home Screen on iOS/Android for an app-like launch with the MediaSpektor icon.
 
 ---
 
