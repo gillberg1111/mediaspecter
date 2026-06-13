@@ -1,0 +1,49 @@
+# MediaSpektor Configuration
+servers:
+  - type: "plex"
+    enabled: true
+    url: "http://localhost:32400"
+    token: "YOUR_PLEX_TOKEN"
+    libraries: ["Movies", "TV Shows"]
+
+  - type: "jellyfin"
+    enabled: false
+    url: "http://localhost:8096"
+    api_key: "YOUR_JELLYFIN_API_KEY"
+    user_id: "YOUR_JELLYFIN_USER_ID"
+    libraries: ["Movies", "TV Shows"]
+
+  - type: "emby"
+    enabled: false
+    url: "http://localhost:8096"
+    api_key: "YOUR_EMBY_API_KEY"
+    user_id: "YOUR_EMBY_USER_ID"
+    libraries: ["Movies", "TV Shows"]
+
+rules:
+  min_age_days: 7
+  exclude_labels: ["keep"]
+  exclude_genres: ["Documentary"]
+  dummy_threshold_mb: 15
+
+aesthetics:
+  enable_poster_overlay: true
+  banner_color: [20, 20, 20, 204]
+  border_color: [212, 175, 55, 255]
+  font_name: "Arial"
+  font_size_ratio: 0.045
+
+integrations:
+  radarr:
+    enabled: false
+    url: "http://localhost:7878"
+    api_key: "YOUR_RADARR_KEY"
+  sonarr:
+    enabled: false
+    url: "http://localhost:8989"
+    api_key: "YOUR_SONARR_KEY"
+
+safety:
+  dry_run: true
+  backup_original_media: false
+  backup_directory: "/path/to/cold/storage/backup"

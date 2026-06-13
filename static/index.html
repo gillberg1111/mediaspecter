@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaSpektor — Storage Dashboard</title>
+    <!-- Outfit and Inter Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/index.css">
+</head>
+<body>
+    <!-- Shimmer Background -->
+    <div class="space-bg">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-ghost brand-logo"></i>
+                <span class="brand-name">Spektor</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="dashboard">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="#" class="nav-item" data-tab="movies">
+                    <i class="fa-solid fa-film"></i> Movies
+                </a>
+                <a href="#" class="nav-item" data-tab="shows">
+                    <i class="fa-solid fa-tv"></i> TV Shows
+                </a>
+                <a href="#" class="nav-item" data-tab="settings">
+                    <i class="fa-solid fa-sliders"></i> Settings
+                </a>
+            </nav>
+            <div class="footer-stats">
+                <span class="status-indicator online"></span> Ready
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <h1 id="page-title">Dashboard</h1>
+                <div class="header-actions">
+                    <button id="btn-refresh" class="btn btn-secondary">
+                        <i class="fa-solid fa-rotate"></i> Refresh
+                    </button>
+                </div>
+            </header>
+
+            <!-- TABS -->
+
+            <!-- Tab: Dashboard -->
+            <section id="tab-dashboard" class="tab-pane active">
+                <div class="stats-grid">
+                    <div class="stats-card">
+                        <div class="stats-icon text-primary"><i class="fa-solid fa-hdd"></i></div>
+                        <div class="stats-info">
+                            <span class="stats-label">Total Space Reclaimed</span>
+                            <h2 id="stat-saved" class="stats-value">0.0 GB</h2>
+                        </div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="stats-icon text-accent"><i class="fa-solid fa-box-archive"></i></div>
+                        <div class="stats-info">
+                            <span class="stats-label">Archived Items</span>
+                            <h2 id="stat-items" class="stats-value">0</h2>
+                        </div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="stats-icon text-success"><i class="fa-solid fa-server"></i></div>
+                        <div class="stats-info">
+                            <span class="stats-label">Connected Servers</span>
+                            <h2 id="stat-servers" class="stats-value">0</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Logs Panel -->
+                <div class="panel logs-panel">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-terminal"></i> Activity Log Console</h3>
+                        <span class="pulse-indicator">Live</span>
+                    </div>
+                    <div class="panel-body">
+                        <pre id="log-console" class="console">Initializing MediaSpektor Console...</pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab: Movies -->
+            <section id="tab-movies" class="tab-pane">
+                <div class="search-bar">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input type="text" id="movie-search" placeholder="Search watched movies..." class="search-input">
+                </div>
+                <div id="movies-grid" class="media-grid">
+                    <!-- Cards injected here -->
+                </div>
+            </section>
+
+            <!-- Tab: TV Shows -->
+            <section id="tab-shows" class="tab-pane">
+                <div class="search-bar">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input type="text" id="show-search" placeholder="Search watched TV shows..." class="search-input">
+                </div>
+                <div id="shows-grid" class="media-grid">
+                    <!-- Cards injected here -->
+                </div>
+            </section>
+
+            <!-- Tab: Settings -->
+            <section id="tab-settings" class="tab-pane">
+                <div class="panel settings-panel">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-gear"></i> Configuration Editor</h3>
+                        <button id="btn-save-config" class="btn btn-primary">Save Changes</button>
+                    </div>
+                    <div class="panel-body">
+                        <div class="form-group">
+                            <label for="config-editor">YAML Configuration</label>
+                            <textarea id="config-editor" class="config-textarea" rows="22" placeholder="# Loading configuration..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- MODALS -->
+
+    <!-- Seasons Modal -->
+    <div id="modal-seasons" class="modal">
+        <div class="modal-content glass">
+            <span class="close-modal" data-modal="modal-seasons">&times;</span>
+            <div class="modal-header">
+                <h2 id="seasons-title">Show Seasons</h2>
+            </div>
+            <div class="modal-body">
+                <div id="seasons-grid" class="media-grid">
+                    <!-- Seasons injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Episodes Modal -->
+    <div id="modal-episodes" class="modal">
+        <div class="modal-content glass modal-lg">
+            <span class="close-modal" data-modal="modal-episodes">&times;</span>
+            <div class="modal-header">
+                <h2 id="episodes-title">Season Episodes</h2>
+            </div>
+            <div class="modal-body">
+                <div class="table-container">
+                    <table class="episodes-table">
+                        <thead>
+                            <tr>
+                                <th>Ep</th>
+                                <th>Title</th>
+                                <th>Size</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="episodes-list">
+                            <!-- Episodes injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="modal-confirm" class="modal">
+        <div class="modal-content glass modal-sm">
+            <div class="modal-header">
+                <h2>Confirm Action</h2>
+            </div>
+            <div class="modal-body text-center">
+                <i class="fa-solid fa-triangle-exclamation warning-icon text-accent"></i>
+                <p id="confirm-msg" class="confirm-message">Are you sure you want to perform this action?</p>
+                <div class="confirm-details glass">
+                    <div class="detail-row">
+                        <span class="detail-label">File:</span>
+                        <span id="confirm-file-path" class="detail-val"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Saved Size:</span>
+                        <span id="confirm-saved-size" class="detail-val"></span>
+                    </div>
+                </div>
+                <div class="confirm-actions">
+                    <button id="btn-confirm-cancel" class="btn btn-secondary">Cancel</button>
+                    <button id="btn-confirm-execute" class="btn btn-danger">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+</body>
+</html>
