@@ -9,8 +9,8 @@ servers:
   - type: "jellyfin"
     enabled: false
     url: "http://localhost:8096"
-    api_key: "YOUR_JELLYFIN_API_KEY"
-    user_id: "YOUR_JELLYFIN_USER_ID"
+    username: "YOUR_JELLYFIN_USERNAME"
+    password: "YOUR_JELLYFIN_PASSWORD"
     libraries: ["Movies", "TV Shows"]
 
   - type: "emby"
@@ -47,3 +47,8 @@ safety:
   dry_run: true
   backup_original_media: false
   backup_directory: "/path/to/cold/storage/backup"
+
+security:
+  enabled: true
+  username: "admin"
+  password: "admin"

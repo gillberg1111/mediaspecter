@@ -474,5 +474,100 @@ class TestFastAPI(unittest.TestCase):
             self.assertEqual(resp.json()["success"], True)
 
 
+class TestAPISecurity(unittest.TestCase):
+    def setUp(self):
+        import mediaspektor
+        self.old_config_path = mediaspektor.CONFIG_PATH
+        self.old_global_spektor = mediaspektor.GLOBAL_SPEKTOR
+        
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self.temp_config = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False)
+        self.temp_config.close()
+        
+        self.config_data = {
+            "servers": [],
+            "rules": {},
+            "safety": {"dry_run": True},
+            "security": {
+                "enabled": True,
+                "username": "testuser",
+                "password": "testpassword"
+            }
+        }
+        
+        import yaml
+        with open(self.temp_config.name, "w") as f:
+            yaml.safe_dump(self.config_data, f)
+            
+        mediaspektor.CONFIG_PATH = self.temp_config.name
+        self.spektor = MediaSpektor(self.temp_config.name)
+        self.spektor.db = Database(self.temp_db.name)
+        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        
+        from fastapi.testclient import TestClient
+        from mediaspektor import app
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        import mediaspektor
+        mediaspektor.CONFIG_PATH = self.old_config_path
+        mediaspektor.GLOBAL_SPEKTOR = self.old_global_spektor
+        if os.path.exists(self.temp_db.name):
+            os.unlink(self.temp_db.name)
+        if os.path.exists(self.temp_config.name):
+            os.unlink(self.temp_config.name)
+
+    def test_unauthorized_endpoints(self):
+        # Protected endpoints should return 401
+        resp = self.client.get("/api/config")
+        self.assertEqual(resp.status_code, 401)
+        
+        resp = self.client.get("/api/stats")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_login_success_and_access(self):
+        # Login with correct credentials
+        resp = self.client.post("/api/login", json={
+            "username": "testuser",
+            "password": "testpassword"
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("success"))
+        
+        # Session cookie should now be set in the client's cookie jar
+        resp = self.client.get("/api/config")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("servers", resp.json())
+
+    def test_login_invalid_credentials(self):
+        # Login with wrong password
+        resp = self.client.post("/api/login", json={
+            "username": "testuser",
+            "password": "wrongpassword"
+        })
+        self.assertEqual(resp.status_code, 401)
+
+    def test_logout(self):
+        # Login first
+        resp = self.client.post("/api/login", json={
+            "username": "testuser",
+            "password": "testpassword"
+        })
+        self.assertEqual(resp.status_code, 200)
+        
+        # Verify access
+        resp = self.client.get("/api/config")
+        self.assertEqual(resp.status_code, 200)
+        
+        # Logout
+        resp = self.client.post("/api/logout")
+        self.assertEqual(resp.status_code, 200)
+        
+        # Verify access is now denied
+        resp = self.client.get("/api/config")
+        self.assertEqual(resp.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,102 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentMovies = [];
     let currentShows = [];
     let logInterval = null;
+
+    // Global fetch interceptor for authentication
+    const originalFetch = window.fetch;
+    window.fetch = async function (...args) {
+        try {
+            const response = await originalFetch(...args);
+            if (response.status === 401) {
+                const url = args[0];
+                if (typeof url === 'string' && url.includes('/api/') && !url.includes('/api/login')) {
+                    showLoginScreen();
+                }
+            }
+            return response;
+        } catch (error) {
+            console.error("Fetch error:", error);
+            throw error;
+        }
+    };
+
+    function showLoginScreen() {
+        const overlay = document.getElementById("login-overlay");
+        if (overlay) {
+            overlay.classList.add("active");
+        }
+    }
+
+    function hideLoginScreen() {
+        const overlay = document.getElementById("login-overlay");
+        if (overlay) {
+            overlay.classList.remove("active");
+        }
+    }
+
+    // Login Form Event Listener
+    const loginForm = document.getElementById("login-form");
+    if (loginForm) {
+        loginForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const usernameInput = document.getElementById("login-username");
+            const passwordInput = document.getElementById("login-password");
+            const username = usernameInput.value;
+            const password = passwordInput.value;
+
+            try {
+                const response = await originalFetch("/api/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (response.ok) {
+                    showToast("Dashboard unlocked successfully!");
+                    hideLoginScreen();
+                    usernameInput.value = "";
+                    passwordInput.value = "";
+                    // Reload data
+                    loadDashboardData();
+                    if (document.querySelector('.nav-item[data-tab="movies"]').classList.contains('active')) {
+                        loadMovies();
+                    } else if (document.querySelector('.nav-item[data-tab="shows"]').classList.contains('active')) {
+                        loadShows();
+                    } else if (document.querySelector('.nav-item[data-tab="settings"]').classList.contains('active')) {
+                        loadSettings();
+                    }
+                } else {
+                    const data = await response.json();
+                    showToast(data.detail || "Invalid credentials", "error");
+                }
+            } catch (error) {
+                console.error("Login failed:", error);
+                showToast("Connection to authentication server failed", "error");
+            }
+        });
+    }
+
+    // Logout Button Event Listener
+    const btnLogout = document.getElementById("btn-logout");
+    if (btnLogout) {
+        btnLogout.addEventListener("click", async () => {
+            try {
+                const response = await originalFetch("/api/logout", {
+                    method: "POST"
+                });
+                if (response.ok) {
+                    showToast("Logged out successfully");
+                    showLoginScreen();
+                } else {
+                    showToast("Logout failed", "error");
+                }
+            } catch (error) {
+                console.error("Logout failed:", error);
+                showToast("Connection failed", "error");
+            }
+        });
+    }
+
     
     // Action state for confirmation modal
     let pendingAction = {
@@ -500,8 +596,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 document.getElementById("srv-jellyfin-enabled").checked = !!jellyfin.enabled;
                 document.getElementById("srv-jellyfin-url").value = jellyfin.url || "";
-                document.getElementById("srv-jellyfin-key").value = jellyfin.api_key || "";
-                document.getElementById("srv-jellyfin-user").value = jellyfin.user_id || "";
+                document.getElementById("srv-jellyfin-username").value = jellyfin.username || "";
+                document.getElementById("srv-jellyfin-password").value = jellyfin.password || "";
                 document.getElementById("srv-jellyfin-libs").value = (jellyfin.libraries || []).join(", ");
 
                 document.getElementById("srv-emby-enabled").checked = !!emby.enabled;
@@ -565,8 +661,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     type: "jellyfin",
                     enabled: document.getElementById("srv-jellyfin-enabled").checked,
                     url: document.getElementById("srv-jellyfin-url").value.trim(),
-                    api_key: document.getElementById("srv-jellyfin-key").value.trim(),
-                    user_id: document.getElementById("srv-jellyfin-user").value.trim(),
+                    username: document.getElementById("srv-jellyfin-username").value.trim(),
+                    password: document.getElementById("srv-jellyfin-password").value.trim(),
                     libraries: document.getElementById("srv-jellyfin-libs").value.split(",").map(s => s.trim()).filter(Boolean)
                 },
                 {

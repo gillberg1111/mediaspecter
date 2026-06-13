@@ -1,6 +1,6 @@
 # MediaSpektor: Multi-Server Watch State Storage Archiver
 
-**MediaSpektor** is a media-server-agnostic utility designed to help administrators reclaim disk space from their Plex, Jellyfin, or Emby libraries. It replaces watched media files (Movies and TV episodes) with tiny, valid dummy video files (approx. 20KB). This reclaims 99.9% of disk space while keeping watch history, metadata, and browseability fully intact. 
+**MediaSpektor** is a media-server-agnostic utility designed to help administrators reclaim disk space from their Plex, Jellyfin, or Emby libraries. It replaces watched media files (Movies and TV episodes) with tiny, valid dummy video files (approx. 20KB). This reclaims disk space while keeping watch history, metadata, and browseability fully intact. 
 
 To visually flag archived items, MediaSpektor synthesizes and uploads a premium glassmorphic banner overlay on the media poster (e.g., `ARCHIVED • 8.4 GB SAVED`) and integrates with Radarr and Sonarr to prevent automatic re-downloads.
 

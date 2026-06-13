@@ -24,7 +24,7 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="brand">
-                <i class="fa-solid fa-ghost brand-logo"></i>
+                <img src="/static/logo.svg" class="brand-logo" alt="Spektor Logo" style="width: 32px; height: 32px;">
                 <span class="brand-name">Spektor</span>
             </div>
             <nav class="nav-menu">
@@ -41,8 +41,13 @@
                     <i class="fa-solid fa-sliders"></i> Settings
                 </a>
             </nav>
-            <div class="footer-stats">
-                <span class="status-indicator online"></span> Ready
+            <div class="sidebar-footer" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div class="footer-stats">
+                    <span class="status-indicator online"></span> Ready
+                </div>
+                <button id="btn-logout" class="btn btn-secondary btn-xs" style="width: 100%; border-radius: 8px;">
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                </button>
             </div>
         </aside>
 
@@ -50,7 +55,10 @@
         <main class="main-content">
             <!-- Header -->
             <header class="header">
-                <h1 id="page-title">Dashboard</h1>
+                <div>
+                    <h1 id="page-title">Dashboard</h1>
+                    <p class="tagline" style="font-size: 0.95rem; color: var(--text-muted); margin-top: 0.4rem; font-weight: 500; letter-spacing: 0.25px;">Reclaim your drive. Keep your library. A ghost in the media server.</p>
+                </div>
                 <div class="header-actions">
                     <button id="btn-refresh" class="btn btn-secondary">
                         <i class="fa-solid fa-rotate"></i> Refresh
@@ -169,12 +177,12 @@
                                         <input type="text" id="srv-jellyfin-url" placeholder="http://localhost:8096">
                                     </div>
                                     <div class="form-group">
-                                        <label for="srv-jellyfin-key">API Key</label>
-                                        <input type="password" id="srv-jellyfin-key" placeholder="Jellyfin API Key">
+                                        <label for="srv-jellyfin-username">Username</label>
+                                        <input type="text" id="srv-jellyfin-username" placeholder="Jellyfin Username">
                                     </div>
                                     <div class="form-group">
-                                        <label for="srv-jellyfin-user">User ID</label>
-                                        <input type="text" id="srv-jellyfin-user" placeholder="Jellyfin User ID">
+                                        <label for="srv-jellyfin-password">Password</label>
+                                        <input type="password" id="srv-jellyfin-password" placeholder="Jellyfin Password">
                                     </div>
                                     <div class="form-group">
                                         <label for="srv-jellyfin-libs">Target Libraries</label>
@@ -438,6 +446,30 @@
                     <button id="btn-confirm-execute" class="btn btn-danger">Confirm</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Login Screen Modal/Card -->
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-card glass">
+            <div class="login-header">
+                <img src="/static/logo.svg" class="login-logo" alt="Spektor Logo">
+                <h2>Spektor</h2>
+                <p class="catchphrase">Reclaim your drive. Keep your library. A ghost in the media server.</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" required placeholder="Enter username">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.75rem;">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required placeholder="Enter password">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.9rem;">
+                    <i class="fa-solid fa-lock-open"></i> Unlock Dashboard
+                </button>
+            </form>
         </div>
     </div>
 
