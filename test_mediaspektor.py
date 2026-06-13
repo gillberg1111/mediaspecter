@@ -522,6 +522,23 @@ class TestFastAPI(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["success"], True)
 
+    def test_poster_proxy(self):
+        fake_item = MagicMock()
+        fake_item.posterUrl = "http://mock-plex/poster.jpg"
+        self.mock_connector._server.fetchItem.return_value = fake_item
+
+        fake_resp = MagicMock()
+        fake_resp.iter_content = lambda chunk_size=1024: iter([b"fake-image-data"])
+        fake_resp.raise_for_status = lambda: None
+        fake_resp.headers = {"Content-Type": "image/jpeg"}
+
+        with patch("mediaspektor.requests.get", return_value=fake_resp):
+            resp = self.client.get("/api/posterproxy?server_type=plex&item_id=1")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers["Cache-Control"], "public, max-age=86400")
+        self.mock_connector._server.fetchItem.assert_called_with(1)
+
 
 class TestAPISecurity(unittest.TestCase):
     def setUp(self):

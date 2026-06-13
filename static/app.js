@@ -232,7 +232,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Refresh Button Hook
     btnRefresh.addEventListener("click", () => {
         const activeTab = document.querySelector(".nav-item.active").getAttribute("data-tab");
-        handleTabActivation(activeTab);
+        if (activeTab === "movies") {
+            loadMovies(true);
+        } else if (activeTab === "shows") {
+            loadShows(true);
+        } else {
+            handleTabActivation(activeTab);
+        }
         showToast("Refreshed data from server", "success");
     });
 
@@ -289,8 +295,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Tab 2: Movies Logic
     // -----------------------------------------------------------------------
     
-    function loadMovies() {
+    function loadMovies(force = false) {
         const grid = document.getElementById("movies-grid");
+
+        // Serve from in-memory cache instantly unless a forced refresh is requested
+        if (!force && currentMovies.length > 0) {
+            renderMovies(currentMovies);
+            return;
+        }
+
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p style="margin-top: 1rem;">Scanning movies library...</p></div>';
 
         fetch("/api/movies")
@@ -319,7 +332,7 @@ document.addEventListener("DOMContentLoaded", () => {
             card.className = "media-card";
             
             // Poster URL proxied through backend
-            const posterUrl = `/api/posterproxy?server_type=${movie.server_type}&item_id=${movie.id}`;
+            const posterUrl = `/api/posterproxy?server_type=${movie.server_type}&item_id=${movie.id}&status=${movie.status}`;
             const sizeFormatted = formatBytes(movie.original_size);
             
             card.innerHTML = `
@@ -363,8 +376,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Tab 3: TV Shows Logic
     // -----------------------------------------------------------------------
     
-    function loadShows() {
+    function loadShows(force = false) {
         const grid = document.getElementById("shows-grid");
+
+        // Serve from in-memory cache instantly unless a forced refresh is requested
+        if (!force && currentShows.length > 0) {
+            renderShows(currentShows);
+            return;
+        }
+
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p style="margin-top: 1rem;">Scanning TV shows library...</p></div>';
 
         fetch("/api/shows")
@@ -392,7 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const card = document.createElement("div");
             card.className = "media-card";
             
-            const posterUrl = `/api/posterproxy?server_type=${show.server_type}&item_id=${show.id}`;
+            const posterUrl = `/api/posterproxy?server_type=${show.server_type}&item_id=${show.id}&status=${show.status || 'original'}`;
             
             card.innerHTML = `
                 <div class="media-poster-container">
@@ -562,10 +582,16 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.success) {
                 showToast(`Action started successfully. Check dashboard log.`, "success");
                 
-                // Reload active grid after a short delay
+                // Reload active grid after a short delay, bypassing the cache so the new status shows
                 setTimeout(() => {
                     const activeTab = document.querySelector(".nav-item.active").getAttribute("data-tab");
-                    handleTabActivation(activeTab);
+                    if (activeTab === "movies") {
+                        loadMovies(true);
+                    } else if (activeTab === "shows") {
+                        loadShows(true);
+                    } else {
+                        handleTabActivation(activeTab);
+                    }
                 }, 2000);
             } else {
                 showToast(data.message || "Failed to start background task.", "error");
@@ -738,6 +764,9 @@ document.addEventListener("DOMContentLoaded", () => {
         .then(data => {
             if (data.success) {
                 showToast("Configuration saved and reloaded successfully!", "success");
+                // Invalidate cached lists so they refetch against the new config
+                currentMovies = [];
+                currentShows = [];
             } else {
                 showToast(data.detail || "Failed to save configuration.", "error");
             }

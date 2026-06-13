@@ -551,6 +551,11 @@ class PlexConnector(BaseMediaServer):
             )
         self._server = PlexServer(config["url"], config["token"])
 
+    def _resolve_id(self, item_id: str | int) -> int | str:
+        if isinstance(item_id, str) and item_id.isdigit():
+            return int(item_id)
+        return item_id
+
     def get_watched_items(
         self, library_names: list[str]
     ) -> list[dict[str, Any]]:
@@ -621,7 +626,7 @@ class PlexConnector(BaseMediaServer):
 
     def download_poster(self, item_id: str, target_path: str) -> bool:
         try:
-            item = self._server.fetchItem(item_id)
+            item = self._server.fetchItem(self._resolve_id(item_id))
             if item.posterUrl:
                 url = item.posterUrl
                 # Plex posterUrl may be relative; build full URL
@@ -640,7 +645,7 @@ class PlexConnector(BaseMediaServer):
 
     def upload_poster(self, item_id: str, source_path: str) -> bool:
         try:
-            item = self._server.fetchItem(item_id)
+            item = self._server.fetchItem(self._resolve_id(item_id))
             item.uploadPoster(filepath=source_path)
             return True
         except Exception as exc:
@@ -710,7 +715,7 @@ class PlexConnector(BaseMediaServer):
     def get_seasons(self, show_id: str) -> list[dict[str, Any]]:
         results = []
         try:
-            show = self._server.fetchItem(show_id)
+            show = self._server.fetchItem(self._resolve_id(show_id))
             for season in show.seasons():
                 results.append({
                     "id": season.ratingKey,
@@ -726,7 +731,7 @@ class PlexConnector(BaseMediaServer):
     def get_episodes(self, show_id: str, season_id: str) -> list[dict[str, Any]]:
         results = []
         try:
-            season = self._server.fetchItem(season_id)
+            season = self._server.fetchItem(self._resolve_id(season_id))
             for episode in season.episodes():
                 media = episode.media[0] if episode.media else None
                 parts = media.parts if media else []
@@ -747,7 +752,7 @@ class PlexConnector(BaseMediaServer):
         return results
 
     def get_item_metadata(self, item_id: str) -> dict[str, Any]:
-        item = self._server.fetchItem(item_id)
+        item = self._server.fetchItem(self._resolve_id(item_id))
         if item.type == "movie":
             media = item.media[0] if item.media else None
             parts = media.parts if media else []
@@ -2372,7 +2377,8 @@ def poster_proxy(server_type: str, item_id: str):
 
     try:
         if server_type == "plex":
-            item = server._server.fetchItem(item_id)
+            parsed_id = int(item_id) if isinstance(item_id, str) and item_id.isdigit() else item_id
+            item = server._server.fetchItem(parsed_id)
             if not item.posterUrl:
                 raise HTTPException(status_code=404, detail="Plex poster url missing")
             url = item.posterUrl
@@ -2380,12 +2386,20 @@ def poster_proxy(server_type: str, item_id: str):
                 url = server.config["url"].rstrip("/") + url + "?X-Plex-Token=" + server.config["token"]
             resp = requests.get(url, timeout=30, stream=True)
             resp.raise_for_status()
-            return StreamingResponse(resp.iter_content(chunk_size=1024), media_type=resp.headers.get("Content-Type", "image/jpeg"))
+            return StreamingResponse(
+                resp.iter_content(chunk_size=1024),
+                media_type=resp.headers.get("Content-Type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
         elif server_type in ("jellyfin", "emby"):
             url = urljoin(server.base_url + "/", f"Items/{item_id}/Images/Primary")
             resp = requests.get(url, headers=server.headers, timeout=30, stream=True)
             resp.raise_for_status()
-            return StreamingResponse(resp.iter_content(chunk_size=1024), media_type=resp.headers.get("Content-Type", "image/jpeg"))
+            return StreamingResponse(
+                resp.iter_content(chunk_size=1024),
+                media_type=resp.headers.get("Content-Type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Poster proxy failed: {exc}")
 
