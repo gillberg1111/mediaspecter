@@ -345,7 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
             card.innerHTML = `
                 <div class="media-badge ${movie.status}">${movie.status.toUpperCase()}</div>
                 <div class="media-poster-container">
-                    <img src="${posterUrl}" class="media-poster" alt="${movie.title}" onerror="this.src='https://placehold.co/400x600/101017/8a2be2?text=${encodeURIComponent(movie.title)}'">
+                    <img src="${posterUrl}" class="media-poster" alt="${movie.title}" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(movie.title)}'">
                 </div>
                 <div class="media-info">
                     <div class="media-title" title="${movie.title}">${movie.title}</div>
@@ -423,7 +423,7 @@ document.addEventListener("DOMContentLoaded", () => {
             
             card.innerHTML = `
                 <div class="media-poster-container">
-                    <img src="${posterUrl}" class="media-poster" alt="${show.title}" onerror="this.src='https://placehold.co/400x600/101017/8a2be2?text=${encodeURIComponent(show.title)}'">
+                    <img src="${posterUrl}" class="media-poster" alt="${show.title}" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(show.title)}'">
                 </div>
                 <div class="media-info">
                     <div class="media-title" title="${show.title}">${show.title}</div>
@@ -469,7 +469,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     
                     card.innerHTML = `
                         <div class="season-poster-container">
-                            <img src="${posterUrl}" class="season-poster" alt="${season.title}" onerror="this.src='https://placehold.co/400x600/101017/8a2be2?text=${encodeURIComponent(season.title)}'">
+                            <img src="${posterUrl}" class="season-poster" alt="${season.title}" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(season.title)}'">
                         </div>
                         <div class="season-info">
                             <div class="season-title">${season.title}</div>

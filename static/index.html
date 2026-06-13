@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediaSpektor — Storage Dashboard</title>
-    <!-- Outfit and Inter Fonts -->
+    <!-- Type (per brand style guide): Space Grotesk + JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/svg+xml" href="/static/mediaspektor-icon-tile.svg">
     <link rel="stylesheet" href="/static/index.css">
     <script src="/static/app.js" defer></script>
 </head>
@@ -24,7 +25,7 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="brand">
-                <img src="/static/logo.svg" class="brand-logo" alt="Spektor Logo" style="width: 32px; height: 32px;">
+                <img src="/static/mediaspektor-icon.svg" class="brand-logo" alt="MediaSpektor" style="width: 30px; height: 30px;">
                 <span class="brand-name">Spektor</span>
             </div>
             <nav class="nav-menu">
@@ -57,7 +58,7 @@
             <header class="header">
                 <div>
                     <h1 id="page-title">Dashboard</h1>
-                    <p class="tagline" style="font-size: 0.95rem; color: var(--text-muted); margin-top: 0.4rem; font-weight: 500; letter-spacing: 0.25px;">Reclaim your drive. Keep your library. A ghost in the media server.</p>
+                    <p class="tagline" style="font-size: 0.95rem; color: var(--text-muted); margin-top: 0.4rem; font-weight: 500; letter-spacing: 0.25px;">Reclaim your space. Keep your library.<span class="tagline-ghost">A <span class="ghost-word">ghost</span> of what you watched.</span></p>
                 </div>
                 <div class="header-actions">
                     <button id="btn-refresh" class="btn btn-secondary">
@@ -70,42 +71,36 @@
 
             <!-- Tab: Dashboard -->
             <section id="tab-dashboard" class="tab-pane active">
-                <div class="stats-grid">
-                    <div class="stats-card">
-                        <div class="stats-icon text-primary"><i class="fa-solid fa-hdd"></i></div>
-                        <div class="stats-info">
-                            <span class="stats-label">Total Space Reclaimed</span>
-                            <h2 id="stat-saved" class="stats-value">0.0 GB</h2>
-                        </div>
+                <div class="hero">
+                    <div class="hero-primary">
+                        <span class="metric-label">Total space reclaimed</span>
+                        <div id="stat-saved" class="hero-figure">0.0&nbsp;GB</div>
+                        <p class="hero-sub">Watched media swapped for lightweight placeholders — watch history, metadata, and artwork left fully intact.</p>
                     </div>
-                    <div class="stats-card">
-                        <div class="stats-icon text-accent"><i class="fa-solid fa-box-archive"></i></div>
-                        <div class="stats-info">
-                            <span class="stats-label">Archived Items</span>
-                            <h2 id="stat-items" class="stats-value">0</h2>
+                    <div class="hero-metrics">
+                        <div class="metric">
+                            <span class="metric-label">Archived items</span>
+                            <span id="stat-items" class="metric-figure">0</span>
                         </div>
-                    </div>
-                    <div class="stats-card">
-                        <div class="stats-icon text-success"><i class="fa-solid fa-server"></i></div>
-                        <div class="stats-info">
-                            <span class="stats-label">Connected Servers</span>
-                            <h2 id="stat-servers" class="stats-value">0</h2>
+                        <div class="metric metric-divide">
+                            <span class="metric-label">Connected servers</span>
+                            <span id="stat-servers" class="metric-figure">0</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Live Logs Panel -->
+                <!-- Live activity log -->
                 <div class="panel logs-panel">
                     <div class="panel-header">
-                        <h3><i class="fa-solid fa-terminal"></i> Activity Log Console</h3>
+                        <h3>Activity log</h3>
                         <span class="pulse-indicator">Live</span>
                     </div>
                     <div class="panel-body">
-                        <pre id="log-console" class="console">Initializing MediaSpektor Console...</pre>
+                        <pre id="log-console" class="console">Initializing…</pre>
                     </div>
                 </div>
                 <div class="version-footer">
-                    MediaSpektor v0.8
+                    MediaSpektor v0.9
                 </div>
             </section>
 
@@ -119,7 +114,7 @@
                     <!-- Cards injected here -->
                 </div>
                 <div class="version-footer">
-                    MediaSpektor v0.8
+                    MediaSpektor v0.9
                 </div>
             </section>
 
@@ -133,7 +128,7 @@
                     <!-- Cards injected here -->
                 </div>
                 <div class="version-footer">
-                    MediaSpektor v0.8
+                    MediaSpektor v0.9
                 </div>
             </section>
 
@@ -408,7 +403,7 @@
                     </div>
                 </form>
                 <div class="version-footer">
-                    MediaSpektor v0.8
+                    MediaSpektor v0.9
                 </div>
             </section>
         </main>
@@ -490,9 +485,9 @@
     <div id="login-overlay" class="login-overlay">
         <div class="login-card glass">
             <div class="login-header">
-                <img src="/static/logo.svg" class="login-logo" alt="Spektor Logo">
-                <h2>Spektor</h2>
-                <p class="catchphrase">Reclaim your drive. Keep your library. A ghost in the media server.</p>
+                <img src="/static/mediaspektor-icon.svg" class="login-logo" alt="MediaSpektor">
+                <h2 class="ms-logo"><span class="ms-logo__media">Media</span><span class="ms-logo__spektor">Spektor</span></h2>
+                <p class="catchphrase">Reclaim your space. Keep your library.<span class="tagline-ghost">A <span class="ghost-word">ghost</span> of what you watched.</span></p>
             </div>
             <form id="login-form">
                 <div class="form-group" style="margin-bottom: 1.25rem;">

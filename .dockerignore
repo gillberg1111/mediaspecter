@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+venv
+__pycache__/
+*.py[cod]
+backups/
+scratch/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+config.yaml
+WORKFLOW.md
+deepseek_*.md

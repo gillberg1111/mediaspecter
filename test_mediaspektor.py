@@ -766,10 +766,9 @@ class TestPropagation(unittest.TestCase):
 
         spektor = self._make_spektor_with_mock_servers(plex, jf)
 
-        with patch("mediaspektor.os.path.exists", return_value=True), \
-             patch("mediaspektor.os.unlink"), \
-             patch("mediaspektor.os.makedirs"), \
-             patch("mediaspektor.shutil.move"), \
+        # The real filesystem swap is covered by TestSafeReplace; here we stub it
+        # so propagation logic can run against fake paths.
+        with patch.object(MediaSpektor, "_replace_with_dummy", return_value=None), \
              patch("mediaspektor.shutil.copy2"), \
              patch("builtins.open"):
             result = spektor.archive_item("plex", "1")
@@ -804,10 +803,9 @@ class TestPropagation(unittest.TestCase):
 
         spektor = self._make_spektor_with_mock_servers(plex, jf)
 
-        with patch("mediaspektor.os.path.exists", return_value=True), \
-             patch("mediaspektor.os.unlink"), \
-             patch("mediaspektor.os.makedirs"), \
-             patch("mediaspektor.shutil.move"), \
+        # The real filesystem swap is covered by TestSafeReplace; here we stub it
+        # so propagation logic can run against fake paths.
+        with patch.object(MediaSpektor, "_replace_with_dummy", return_value=None), \
              patch("mediaspektor.shutil.copy2"), \
              patch("builtins.open"):
             result = spektor.archive_item("plex", "1")
@@ -885,6 +883,46 @@ class TestPropagation(unittest.TestCase):
         tmdb.api_key = ""
         result3 = spektor._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
         self.assertEqual(result3["tmdb"], None)
+
+
+class TestSafeReplace(unittest.TestCase):
+    """Guards the data-safety contract of _replace_with_dummy."""
+
+    def _spektor(self):
+        # Bare instance — _replace_with_dummy needs no config/connectors.
+        return MediaSpektor.__new__(MediaSpektor)
+
+    def test_atomic_replace(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "movie.mkv")
+            with open(f, "wb") as fh:
+                fh.write(b"X" * 1000)
+            out = self._spektor()._replace_with_dummy(f, b"DUMMY")
+            self.assertIsNone(out)
+            with open(f, "rb") as fh:
+                self.assertEqual(fh.read(), b"DUMMY")
+
+    def test_replace_with_backup_preserves_original(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "movie.mkv")
+            backup = os.path.join(d, "plex_1.mkv")
+            with open(f, "wb") as fh:
+                fh.write(b"ORIGINAL")
+            out = self._spektor()._replace_with_dummy(f, b"DUMMY", backup)
+            self.assertEqual(out, backup)
+            with open(f, "rb") as fh:
+                self.assertEqual(fh.read(), b"DUMMY")
+            with open(backup, "rb") as fh:
+                self.assertEqual(fh.read(), b"ORIGINAL")
+
+    def test_missing_file_raises_without_side_effects(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "does-not-exist.mkv")
+            with self.assertRaises(FileNotFoundError):
+                self._spektor()._replace_with_dummy(f, b"DUMMY")
+            self.assertFalse(os.path.exists(f))
+            # No stray temp files left behind in the directory
+            self.assertEqual(os.listdir(d), [])
 
 
 if __name__ == "__main__":

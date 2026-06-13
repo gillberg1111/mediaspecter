@@ -14,6 +14,7 @@ import shutil
 import sqlite3
 import struct
 import sys
+import tempfile
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -2187,23 +2188,18 @@ class MediaSpektor:
                             "No poster for %s — skipping overlay", title
                         )
 
-                    # 2. Backup original media if configured
-                    if self.config.get("safety", {}).get(
-                        "backup_original_media", False
-                    ):
-                        backup_media = (
-                            self.backup_dir
-                            / f"{server.server_type}_{item_id}{ext}"
-                        )
-                        shutil.move(file_path, str(backup_media))
-                        backup_media_path = str(backup_media)
-                    else:
-                        os.unlink(file_path)
-
-                    # 3. Write dummy file
+                    # 2-3. Backup (if configured) + safely swap in the dummy file.
+                    # Pre-flight checks abort before any deletion, so a failure
+                    # (bad path / permissions) never destroys the original.
                     dummy_bytes = base64.b64decode(dummy_base64)
-                    with open(file_path, "wb") as f:
-                        f.write(dummy_bytes)
+                    backup_target = (
+                        str(self.backup_dir / f"{server.server_type}_{item_id}{ext}")
+                        if self.config.get("safety", {}).get("backup_original_media", False)
+                        else None
+                    )
+                    backup_media_path = self._replace_with_dummy(
+                        file_path, dummy_bytes, backup_target
+                    )
 
                     # 4. Log to database
                     self.db.insert(
@@ -2308,6 +2304,46 @@ class MediaSpektor:
     def stats(self) -> dict[str, Any]:
         return self.db.get_stats()
 
+    def _replace_with_dummy(
+        self, file_path: str, dummy_bytes: bytes, backup_target: str | None = None
+    ) -> str | None:
+        """Safely swap the original media file for the dummy.
+
+        Verifies the original exists and its directory is writable BEFORE any
+        destructive action, then writes the dummy to a temp file and atomically
+        replaces the original — so a failure never leaves the file missing.
+        Returns the backup media path (when backing up) or None.
+        """
+        directory = os.path.dirname(file_path) or "."
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(
+                f"Original media not found at '{file_path}'. MediaSpektor cannot reach the file "
+                f"— ensure the media share is mounted at the same path the server reports "
+                f"(e.g. /data) with read/write access."
+            )
+        if not os.access(directory, os.W_OK):
+            raise PermissionError(
+                f"Directory '{directory}' is not writable by MediaSpektor — check the "
+                f"container/user permissions and the volume mount."
+            )
+
+        backup_media_path: str | None = None
+        if backup_target:
+            shutil.move(file_path, backup_target)
+            backup_media_path = backup_target
+
+        # Atomic replace: write dummy to a temp file in the same dir, then os.replace.
+        fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".ms-tmp")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(dummy_bytes)
+            os.replace(tmp_path, file_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+        return backup_media_path
+
     def archive_item(self, server_type: str, item_id: str) -> dict[str, Any]:
         """Archive a single chosen movie or episode, propagating to all servers."""
         results: dict[str, Any] = {"success": False, "error": None, "warnings": []}
@@ -2350,19 +2386,17 @@ class MediaSpektor:
 
             logger.info("Spektoring single item: %s (%.2f GB) — propagating to all servers", title, gb_saved)
 
-            # 3. Replace the file on disk exactly once (before poster loop)
-            backup_media_path: str | None = None
-            if self.config.get("safety", {}).get("backup_original_media", False):
-                backup_media = self.backup_dir / f"{server_type}_{item_id}{ext}"
-                shutil.move(file_path, str(backup_media))
-                backup_media_path = str(backup_media)
-            else:
-                if os.path.exists(file_path):
-                    os.unlink(file_path)
-
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "wb") as f:
-                f.write(dummy_bytes)
+            # 3. Replace the file on disk exactly once — safely. Pre-flight checks
+            # (file exists + dir writable) abort before any delete, and the swap is
+            # atomic, so a bad path or permissions can never destroy the original.
+            backup_target = (
+                str(self.backup_dir / f"{server_type}_{item_id}{ext}")
+                if self.config.get("safety", {}).get("backup_original_media", False)
+                else None
+            )
+            backup_media_path: str | None = self._replace_with_dummy(
+                file_path, dummy_bytes, backup_target
+            )
 
             # 4. Expand external IDs once (noop without TMDB key, episodes excluded)
             expanded_ids = self._expand_external_ids(media_type, item["external_ids"])

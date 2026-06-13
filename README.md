@@ -1,5 +1,7 @@
 # MediaSpektor: Multi-Server Watch State Storage Archiver
 
+![MediaSpektor](static/mediaspektor-banner.png)
+
 **MediaSpektor** is a media-server-agnostic utility designed to help administrators reclaim disk space from their Plex, Jellyfin, or Emby libraries. It replaces watched media files (Movies and TV episodes) with tiny, valid dummy video files (approx. 20KB). This reclaims disk space while keeping watch history, metadata, and browseability fully intact. 
 
 To visually flag archived items, MediaSpektor synthesizes and uploads a premium glassmorphic banner overlay on the media poster (e.g., `ARCHIVED • 8.4 GB SAVED`) and integrates with Radarr and Sonarr to prevent automatic re-downloads.
@@ -60,6 +62,38 @@ Ensure you have Python 3.8+ installed.
    pip install requests pyyaml Pillow plexapi
    ```
    *(Note: `plexapi` is optional and only required if using a Plex media server).*
+
+---
+
+## Deploy on Unraid (Docker)
+
+MediaSpektor must run somewhere it can **read and write the actual media files**. If your
+servers run in containers (e.g. on Unraid), run MediaSpektor as a container too and mount the
+media share at the **exact same path your Plex/Jellyfin/Emby containers use** (commonly `/data`).
+That way the paths the servers report resolve 1:1 on disk — no path translation needed.
+
+A multi-arch image is published to GHCR by CI on every push to `main` and every `vX.Y` tag:
+
+```bash
+docker run -d \
+  --name mediaspektor \
+  -p 5000:5000 \
+  -v /mnt/user/appdata/mediaspektor:/config \
+  -v /mnt/user/data:/data \
+  ghcr.io/gillberg1111/mediaspektor:latest
+```
+
+- **`/config`** — holds `config.yaml`, the SQLite DB, and poster backups (persisted). A default
+  config is seeded on first run; edit it in the dashboard's **Settings** tab.
+- **`/data`** — your media. **Map it to the same container path your other media containers use**,
+  with read/write access, so `/data/movies/…` etc. line up.
+
+Then open `http://<unraid-ip>:5000`. On Unraid you can also add it as a Docker container via the
+template UI using the same image and the two volume mappings above.
+
+> **Why this matters:** running MediaSpektor on a different host than the files (or with a
+> mismatched `/data` mount) yields `Permission denied` / `No such file` errors when archiving —
+> it can't reach the files. Same-path, writable mount fixes it.
 
 ---
 

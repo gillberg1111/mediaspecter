@@ -5,6 +5,18 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v0.9] - 2026-06-13
+
+### Added
+- **Docker image + CI** — a `Dockerfile`, `requirements.txt`, and a GitHub Action that tests, builds, and publishes a multi-arch (amd64/arm64) image to GHCR on every push to `main` and every `vX.Y` tag. Intended to run on Unraid alongside Plex/Jellyfin/Emby with the media share mounted at the same `/data` path. README gains a **Deploy on Unraid (Docker)** section.
+- **Brand system** — adopted the MediaSpektor style guide: new ghost logo assets (sidebar icon + SVG favicon), the `Media`(white) + `Spektor`(ghost-green) wordmark, and the "ghost" highlight rule in brand copy.
+
+### Changed
+- **Full UI redesign.** Reworked layout (hero-led dashboard, cinematic poster-forward media cards, refined sidebar/header), single mint accent (`#3ECF8E`) on near-black per the style guide, Space Grotesk + JetBrains Mono typography, ambient background glow with subtle drift, and tasteful frosted-glass surfaces. New tagline: "Reclaim your space. Keep your library. *A ghost of what you watched.*"
+
+### Fixed
+- **Data-safety on archive.** Archiving now verifies the original file exists and its directory is writable **before** any deletion, and swaps in the dummy via an atomic temp-file replace — so a bad path or permission error (e.g. an unmounted `/data`) can never destroy the original. Clear, actionable error messages replace the raw `Permission denied`.
+
 ## [v0.8] - 2026-06-13
 
 ### Fixed
