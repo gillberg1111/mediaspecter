@@ -5,6 +5,15 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.0] - 2026-06-13
+
+First stable public release — published to the Unraid Community Applications catalog.
+
+### Added
+- **MIT License.**
+
+MediaSpektor is now feature-complete for 1.0: multi-server archive propagation across Plex/Jellyfin/Emby with an optional TMDB ID bridge, a single-accent "ghost" brand identity, installable PWA, Dockerized with CI-published GHCR images, atomic data-safe archiving, and a mint-accented poster overlay.
+
 ## [v0.11] - 2026-06-13
 
 ### Changed
