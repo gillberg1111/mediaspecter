@@ -635,5 +635,250 @@ class TestAPISecurity(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
 
 
+class TestPropagation(unittest.TestCase):
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self.temp_config = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False)
+        self.temp_config.close()
+
+        self.config_data = {
+            "servers": [
+                {"type": "plex", "enabled": True, "url": "http://mock-plex", "token": "t", "libraries": ["Movies"]},
+                {"type": "jellyfin", "enabled": True, "url": "http://mock-jf", "username": "u", "password": "p", "libraries": ["Movies"]},
+            ],
+            "rules": {"min_age_days": 0, "exclude_labels": [], "exclude_genres": [], "dummy_threshold_mb": 0},
+            "safety": {"dry_run": False, "backup_original_media": False, "allow_automated_archival": True},
+            "integrations": {},
+        }
+
+    def tearDown(self):
+        if os.path.exists(self.temp_db.name):
+            os.unlink(self.temp_db.name)
+        if os.path.exists(self.temp_config.name):
+            os.unlink(self.temp_config.name)
+
+    def _make_spektor(self):
+        from mediaspektor import MediaSpektor
+        import yaml
+        with open(self.temp_config.name, "w") as f:
+            yaml.safe_dump(self.config_data, f)
+        spektor = MediaSpektor(self.temp_config.name)
+        spektor.db = Database(self.temp_db.name)
+        return spektor
+
+    def _make_spektor_with_mock_servers(self, *servers):
+        """Create spktor and replace servers with mock list."""
+        spektor = self._make_spektor()
+        spektor.servers = list(servers)
+        return spektor
+
+    @patch("mediaspektor.PlexServer")
+    @patch("mediaspektor.JellyfinConnector.authenticate")
+    def test_find_item_path_then_id(self, mock_jf_auth, mock_plex_server_cls):
+        # Build Plex connector with mocked section/search
+        mock_plex = MagicMock()
+        mock_plex_server_cls.return_value = mock_plex
+
+        import mediaspektor
+        plex_cfg = {"type": "plex", "enabled": True, "url": "http://mock-plex", "token": "t", "libraries": ["Movies"]}
+        plex = mediaspektor.PlexConnector(plex_cfg)
+
+        match_item = MagicMock()
+        match_item.ratingKey = 777
+        match_item.media = [MagicMock()]
+        match_item.media[0].parts = [MagicMock()]
+        match_item.media[0].parts[0].file = "/data/Movie.mkv"
+        guid_obj = MagicMock()
+        guid_obj.id = "tmdb://12345"
+        match_item.guids = [guid_obj]
+
+        no_match_item = MagicMock()
+        no_match_item.ratingKey = 888
+        no_match_item.media = [MagicMock()]
+        no_match_item.media[0].parts = [MagicMock()]
+        no_match_item.media[0].parts[0].file = "/data/Other.mkv"
+        no_match_item.guids = []
+
+        mock_section = MagicMock()
+        mock_section.type = "movie"
+        mock_section.search.return_value = [no_match_item, match_item]
+        mock_plex.library.section.return_value = mock_section
+
+        plex._server = mock_plex
+        plex.get_item_metadata = MagicMock()
+        plex.get_item_metadata.return_value = {
+            "id": 777, "title": "Match", "type": "movie", "file_path": "/data/Movie.mkv",
+            "original_size": 100, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": "12345", "imdb": None, "tvdb": None},
+        }
+
+        # Path match
+        result = plex.find_item("/data/Movie.mkv", {}, "movie")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["id"], 777)
+
+        # TMDB ID fallback
+        result2 = plex.find_item("/data/nonexistent.mkv", {"tmdb": "12345", "imdb": None, "tvdb": None}, "movie")
+        self.assertIsNotNone(result2)
+        self.assertEqual(result2["id"], 777)
+
+        # Episode with non-matching path returns None
+        result3 = plex.find_item("/data/nonexistent.mkv", {}, "episode")
+        self.assertIsNone(result3)
+
+    @patch("mediaspektor.JellyfinConnector.authenticate")
+    @patch("mediaspektor.PlexServer")
+    def test_archive_item_propagates_to_all_servers(self, mock_plex_cls, mock_jf_auth):
+        plex_item = {
+            "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": "123", "imdb": "tt456", "tvdb": None},
+        }
+        jf_item = {
+            "id": "99", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": None, "imdb": "tt456", "tvdb": None},
+        }
+
+        plex = MagicMock()
+        plex.server_type = "plex"
+        plex.get_item_metadata.return_value = plex_item
+        plex.find_item.return_value = plex_item
+        plex.download_poster.return_value = True
+        plex.upload_poster.return_value = True
+        plex.trigger_library_scan = MagicMock()
+
+        jf = MagicMock()
+        jf.server_type = "jellyfin"
+        jf.get_item_metadata.return_value = jf_item
+        jf.find_item.return_value = jf_item
+        jf.download_poster.return_value = True
+        jf.upload_poster.return_value = True
+        jf.trigger_library_scan = MagicMock()
+
+        spektor = self._make_spektor_with_mock_servers(plex, jf)
+
+        with patch("mediaspektor.os.path.exists", return_value=True), \
+             patch("mediaspektor.os.unlink"), \
+             patch("mediaspektor.os.makedirs"), \
+             patch("mediaspektor.shutil.move"), \
+             patch("mediaspektor.shutil.copy2"), \
+             patch("builtins.open"):
+            result = spektor.archive_item("plex", "1")
+
+        self.assertTrue(result["success"])
+        jf.find_item.assert_called()
+        self.assertGreaterEqual(plex.upload_poster.call_count, 1)
+        self.assertGreaterEqual(jf.upload_poster.call_count, 1)
+        self.assertEqual(spektor.db.get_stats()["total_items"], 2)
+
+    @patch("mediaspektor.JellyfinConnector.authenticate")
+    @patch("mediaspektor.PlexServer")
+    def test_archive_item_skips_unmatched_server(self, mock_plex_cls, mock_jf_auth):
+        plex_item = {
+            "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": "123", "imdb": None, "tvdb": None},
+        }
+
+        plex = MagicMock()
+        plex.server_type = "plex"
+        plex.get_item_metadata.return_value = plex_item
+        plex.find_item.return_value = plex_item
+        plex.download_poster.return_value = True
+        plex.upload_poster.return_value = True
+        plex.trigger_library_scan = MagicMock()
+
+        jf = MagicMock()
+        jf.server_type = "jellyfin"
+        jf.find_item.return_value = None
+        jf.trigger_library_scan = MagicMock()
+
+        spektor = self._make_spektor_with_mock_servers(plex, jf)
+
+        with patch("mediaspektor.os.path.exists", return_value=True), \
+             patch("mediaspektor.os.unlink"), \
+             patch("mediaspektor.os.makedirs"), \
+             patch("mediaspektor.shutil.move"), \
+             patch("mediaspektor.shutil.copy2"), \
+             patch("builtins.open"):
+            result = spektor.archive_item("plex", "1")
+
+        self.assertTrue(result["success"])
+        self.assertTrue(any("jellyfin" in str(w).lower() for w in result.get("warnings", [])))
+        self.assertEqual(spektor.db.get_stats()["total_items"], 1)
+        jf.upload_poster.assert_not_called()
+
+    def test_restore_fans_out(self):
+        spektor = self._make_spektor()
+
+        # Seed two sibling rows
+        spektor.db.insert(
+            server_type="plex", server_item_id="1", title="Movie", media_type="movie",
+            original_path="/data/Movie.mp4", original_size_bytes=100, dummy_size_bytes=10,
+            backup_poster_path="/backups/plex_1_poster_original.jpg", status="archived",
+        )
+        spektor.db.insert(
+            server_type="jellyfin", server_item_id="99", title="Movie", media_type="movie",
+            original_path="/data/Movie.mp4", original_size_bytes=100, dummy_size_bytes=10,
+            backup_poster_path="/backups/jellyfin_99_poster_original.jpg", status="archived",
+        )
+
+        plex = MagicMock()
+        plex.server_type = "plex"
+        plex.upload_poster.return_value = True
+        plex.trigger_library_scan = MagicMock()
+
+        jf = MagicMock()
+        jf.server_type = "jellyfin"
+        jf.upload_poster.return_value = True
+        jf.trigger_library_scan = MagicMock()
+
+        spektor.servers = [plex, jf]
+
+        with patch("os.path.exists", return_value=True), patch("shutil.move"):
+            self.assertTrue(spektor.restore("plex", "1"))
+
+        # Both rows restored
+        self.assertEqual(spektor.db.get_item("plex", "1")["status"], "restored")
+        self.assertEqual(spektor.db.get_item("jellyfin", "99")["status"], "restored")
+        # Upload called for both
+        plex.upload_poster.assert_called()
+        jf.upload_poster.assert_called()
+
+    def test_expand_external_ids_bridges(self):
+        from mediaspektor import TmdbClient
+
+        tmdb = TmdbClient("fake-key-not-jwt")
+
+        def fake_get(path, **params):
+            if "/find/" in path:
+                return {"movie_results": [{"id": 99}]}
+            if "/external_ids" in path:
+                return {"imdb_id": "tt789", "tvdb_id": 2020}
+            return {}
+
+        tmdb._get = fake_get
+
+        spektor = self._make_spektor()
+        spektor.tmdb = tmdb
+
+        # Expand from imdb only
+        result = spektor._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
+        self.assertEqual(result["tmdb"], "99")
+        self.assertEqual(result["imdb"], "tt123")
+        self.assertEqual(result["tvdb"], "2020")
+
+        # Episodes return input unchanged
+        ep_result = spektor._expand_external_ids("episode", {"tmdb": None, "imdb": "tt123"})
+        self.assertEqual(ep_result["tmdb"], None)
+
+        # When disabled, return input unchanged
+        tmdb.api_key = ""
+        result3 = spektor._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
+        self.assertEqual(result3["tmdb"], None)
+
+
 if __name__ == "__main__":
     unittest.main()

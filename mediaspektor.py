@@ -39,6 +39,28 @@ def _parse_iso_date(date_str: str | None) -> datetime | None:
         return None
 
 
+def _plex_external_ids(guids) -> dict[str, str | None]:
+    ids: dict[str, str | None] = {"tmdb": None, "imdb": None, "tvdb": None}
+    for g in (guids or []):
+        gid = getattr(g, "id", "") or ""
+        if gid.startswith("tmdb://"):
+            ids["tmdb"] = gid[len("tmdb://"):].split("?")[0]
+        elif gid.startswith("imdb://"):
+            ids["imdb"] = gid[len("imdb://"):].split("?")[0]
+        elif gid.startswith("tvdb://"):
+            ids["tvdb"] = gid[len("tvdb://"):].split("?")[0]
+    return ids
+
+
+def _provider_external_ids(provider_ids: dict) -> dict[str, str | None]:
+    p = {k.lower(): v for k, v in (provider_ids or {}).items()}
+    return {
+        "tmdb": str(p["tmdb"]) if p.get("tmdb") else None,
+        "imdb": str(p["imdb"]) if p.get("imdb") else None,
+        "tvdb": str(p["tvdb"]) if p.get("tvdb") else None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Optional plexapi import
 # ---------------------------------------------------------------------------
@@ -398,6 +420,42 @@ DUMMY_VIDEOS: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# TMDB ID Bridge Client
+# ---------------------------------------------------------------------------
+class TmdbClient:
+    BASE = "https://api.themoviedb.org/3"
+
+    def __init__(self, api_key: str) -> None:
+        self.api_key = (api_key or "").strip()
+        self._cache: dict[tuple, dict] = {}
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key)
+
+    def _get(self, path: str, **params) -> dict:
+        if self.api_key.startswith("eyJ"):
+            headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
+            resp = requests.get(f"{self.BASE}{path}", params=params, headers=headers, timeout=10)
+        else:
+            resp = requests.get(f"{self.BASE}{path}", params={"api_key": self.api_key, **params}, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    def find_tmdb_id(self, external_source: str, external_id: str, media_type: str) -> str | None:
+        data = self._get(f"/find/{external_id}", external_source=external_source)
+        key = "movie_results" if media_type == "movie" else "tv_results"
+        results = data.get(key) or []
+        return str(results[0]["id"]) if results else None
+
+    def external_ids(self, media_type: str, tmdb_id: str) -> dict[str, str | None]:
+        path = f"/movie/{tmdb_id}/external_ids" if media_type == "movie" else f"/tv/{tmdb_id}/external_ids"
+        data = self._get(path)
+        tvdb = data.get("tvdb_id")
+        return {"imdb": data.get("imdb_id") or None, "tvdb": str(tvdb) if tvdb else None}
+
+
+# ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 class Database:
@@ -499,6 +557,24 @@ class Database:
         finally:
             conn.close()
 
+    def get_items_by_path(self, original_path: str, status: str | None = "archived") -> list[dict[str, Any]]:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            if status:
+                rows = conn.execute(
+                    "SELECT * FROM archived_items WHERE original_path=? AND status=?",
+                    (original_path, status),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM archived_items WHERE original_path=?",
+                    (original_path,),
+                ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
 
 # ---------------------------------------------------------------------------
 # Abstract Media Server Connector
@@ -536,6 +612,11 @@ class BaseMediaServer(ABC):
 
     def get_item_metadata(self, item_id: str) -> dict[str, Any]:
         return {}
+
+    @abstractmethod
+    def find_item(self, file_path: str, external_ids: dict, media_type: str) -> dict | None:
+        """Locate this server's local item matching the given physical media.
+        Returns this server's metadata dict, or None if no confident match."""
 
 
 # ---------------------------------------------------------------------------
@@ -768,7 +849,8 @@ class PlexConnector(BaseMediaServer):
                 "original_size": size,
                 "last_watched": item.lastViewedAt if hasattr(item, "lastViewedAt") else None,
                 "genres": genres,
-                "labels": labels
+                "labels": labels,
+                "external_ids": _plex_external_ids(getattr(item, "guids", None)),
             }
         elif item.type == "episode":
             media = item.media[0] if item.media else None
@@ -794,9 +876,36 @@ class PlexConnector(BaseMediaServer):
                 "original_size": size,
                 "last_watched": item.lastViewedAt if hasattr(item, "lastViewedAt") else None,
                 "genres": genres,
-                "labels": labels
+                "labels": labels,
+                "external_ids": _plex_external_ids(getattr(item, "guids", None)),
             }
         raise ValueError(f"Unsupported Plex item type: {item.type}")
+
+    def find_item(self, file_path: str, external_ids: dict, media_type: str) -> dict | None:
+        try:
+            libtype = "movie" if media_type == "movie" else "episode"
+            for lib_name in self.config.get("libraries", []):
+                try:
+                    section = self._server.library.section(lib_name)
+                except Exception:
+                    continue
+                if section.type != libtype:
+                    continue
+                for item in section.search(libtype=libtype, includeGuids=1):
+                    try:
+                        if item.media and item.media[0].parts:
+                            if item.media[0].parts[0].file == file_path:
+                                return self.get_item_metadata(str(item.ratingKey))
+                    except Exception:
+                        pass
+                    if media_type == "movie":
+                        item_ids = _plex_external_ids(getattr(item, "guids", None))
+                        for system in ("tmdb", "imdb", "tvdb"):
+                            if item_ids.get(system) and external_ids.get(system) and item_ids[system] == external_ids[system]:
+                                return self.get_item_metadata(str(item.ratingKey))
+        except Exception as exc:
+            logger.warning("Plex find_item error: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1196,8 +1305,37 @@ class JellyfinConnector(BaseMediaServer):
             "original_size": size,
             "last_watched": last_watched,
             "genres": genres,
-            "labels": labels
+            "labels": labels,
+            "external_ids": _provider_external_ids(item.get("ProviderIds", {})),
         }
+
+    def find_item(self, file_path: str, external_ids: dict, media_type: str) -> dict | None:
+        try:
+            self._ensure_auth()
+            if not self.user_id:
+                return None
+            resp = self._get(
+                f"/Users/{self.user_id}/Items",
+                params={
+                    "Recursive": "true",
+                    "IncludeItemTypes": "Movie,Episode",
+                    "Fields": "Path,ProviderIds,MediaSources",
+                },
+            )
+            items = resp.json().get("Items", [])
+            for item in items:
+                item_path = item.get("Path", "")
+                if item_path and item_path == file_path:
+                    return self.get_item_metadata(item["Id"])
+                item_type = item.get("Type", "")
+                if media_type == "movie" and item_type == "Movie":
+                    item_ids = _provider_external_ids(item.get("ProviderIds", {}))
+                    for system in ("tmdb", "imdb", "tvdb"):
+                        if item_ids.get(system) and external_ids.get(system) and item_ids[system] == external_ids[system]:
+                            return self.get_item_metadata(item["Id"])
+        except Exception as exc:
+            logger.warning("Jellyfin find_item error: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1500,8 +1638,37 @@ class EmbyConnector(BaseMediaServer):
             "original_size": size,
             "last_watched": last_watched,
             "genres": genres,
-            "labels": labels
+            "labels": labels,
+            "external_ids": _provider_external_ids(item.get("ProviderIds", {})),
         }
+
+    def find_item(self, file_path: str, external_ids: dict, media_type: str) -> dict | None:
+        if not self.config.get("user_id") or not self.config.get("api_key"):
+            logger.error("Emby: user_id and api_key required for cross-server matching")
+            return None
+        try:
+            resp = self._get(
+                f"/Users/{self.user_id}/Items",
+                params={
+                    "Recursive": "true",
+                    "IncludeItemTypes": "Movie,Episode",
+                    "Fields": "Path,ProviderIds,MediaSources",
+                },
+            )
+            items = resp.json().get("Items", [])
+            for item in items:
+                item_path = item.get("Path", "")
+                if item_path and item_path == file_path:
+                    return self.get_item_metadata(item["Id"])
+                item_type = item.get("Type", "")
+                if media_type == "movie" and item_type == "Movie":
+                    item_ids = _provider_external_ids(item.get("ProviderIds", {}))
+                    for system in ("tmdb", "imdb", "tvdb"):
+                        if item_ids.get(system) and external_ids.get(system) and item_ids[system] == external_ids[system]:
+                            return self.get_item_metadata(item["Id"])
+        except Exception as exc:
+            logger.warning("Emby find_item error: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1759,6 +1926,10 @@ class MediaSpektor:
         if integrations.get("sonarr", {}).get("enabled", False):
             self.sonarr = SonarrClient(integrations["sonarr"])
 
+        # TMDB ID bridge (optional, key-gated)
+        tmdb_key = integrations.get("tmdb", {}).get("api_key", "") or os.environ.get("TMDB_API_KEY", "")
+        self.tmdb = TmdbClient(tmdb_key)
+
     def _create_connector(
         self, cfg: dict
     ) -> BaseMediaServer | None:
@@ -1776,6 +1947,39 @@ class MediaSpektor:
         except Exception as exc:
             logger.warning("Failed to create %s connector: %s", server_type, exc)
             return None
+
+    def _expand_external_ids(self, media_type: str, ids: dict) -> dict:
+        if media_type != "movie":
+            return ids
+        if not self.tmdb.enabled:
+            return ids
+        try:
+            non_null = frozenset((k, v) for k, v in ids.items() if v)
+            cache_key = (media_type, non_null)
+            if cache_key in self.tmdb._cache:
+                return self.tmdb._cache[cache_key]
+
+            merged = dict(ids)
+            tmdb_id = ids.get("tmdb")
+            if not tmdb_id:
+                if ids.get("imdb"):
+                    tmdb_id = self.tmdb.find_tmdb_id("imdb_id", ids["imdb"], media_type)
+                if not tmdb_id and ids.get("tvdb"):
+                    tmdb_id = self.tmdb.find_tmdb_id("tvdb_id", ids["tvdb"], media_type)
+
+            if tmdb_id:
+                merged["tmdb"] = tmdb_id
+                ext = self.tmdb.external_ids(media_type, tmdb_id)
+                if ext.get("imdb") and not merged.get("imdb"):
+                    merged["imdb"] = ext["imdb"]
+                if ext.get("tvdb") and not merged.get("tvdb"):
+                    merged["tvdb"] = ext["tvdb"]
+
+            self.tmdb._cache[cache_key] = merged
+            return merged
+        except Exception as exc:
+            logger.warning("TMDB bridge expansion failed: %s — using source IDs only", exc)
+            return ids
 
     def _filter_items(
         self, items: list[dict[str, Any]]
@@ -2006,79 +2210,85 @@ class MediaSpektor:
         return results
 
     def restore(self, server_type: str, item_id: str) -> bool:
-        """Restore a single archived item."""
+        """Restore a single archived item and all sibling rows across servers."""
         record = self.db.get_item(server_type, item_id)
         if not record:
             logger.error("No archived record for %s/%s", server_type, item_id)
             return False
 
-        logger.info("Restoring: %s", record["title"])
+        logger.info("Restoring: %s (fanning out to sibling rows)", record["title"])
 
-        # Find the matching server connector
-        server = None
-        for s in self.servers:
-            if s.server_type == server_type:
-                server = s
+        siblings = self.db.get_items_by_path(record["original_path"], status="archived")
+        if not siblings:
+            siblings = [record]
+
+        # Restore media file once (from first sibling that has it)
+        media_restored = False
+        for sib in siblings:
+            if sib.get("backup_media_path") and os.path.exists(sib["backup_media_path"]):
+                shutil.move(sib["backup_media_path"], record["original_path"])
+                logger.info("Restored media file to %s", record["original_path"])
+                media_restored = True
                 break
-
-        if not server:
-            logger.error(
-                "No active %s server configured — cannot restore poster",
-                server_type,
+        if not media_restored:
+            logger.warning(
+                "Original media backup not found — "
+                "please manually restore the file to: %s",
+                record["original_path"],
             )
-        else:
-            # Restore original poster
-            backup_poster = record.get("backup_poster_path")
+
+        # Fan out poster restore and status update to every sibling connector
+        for sib in siblings:
+            srv_type = sib["server_type"]
+            srv_item_id = sib["server_item_id"]
+            server = None
+            for s in self.servers:
+                if s.server_type == srv_type:
+                    server = s
+                    break
+            if not server:
+                logger.warning("No active %s server configured — cannot restore poster for %s", srv_type, sib.get("title"))
+                self.db.update_status(srv_type, srv_item_id, "restored")
+                continue
+
+            backup_poster = sib.get("backup_poster_path")
             if backup_poster and os.path.exists(backup_poster):
                 try:
-                    server.upload_poster(item_id, backup_poster)
-                    logger.info("Restored poster for %s", record["title"])
+                    server.upload_poster(srv_item_id, backup_poster)
+                    logger.info("Restored poster for %s on %s", sib.get("title"), srv_type)
                 except Exception as exc:
-                    logger.error(
-                        "Failed to restore poster: %s", exc
-                    )
+                    logger.error("Failed to restore poster for %s on %s: %s", sib.get("title"), srv_type, exc)
+            try:
+                server.trigger_library_scan()
+            except Exception as exc:
+                logger.warning("Library scan failed for %s: %s", srv_type, exc)
 
-            # Check if backup media exists
-            backup_media = record.get("backup_media_path")
-            if backup_media and os.path.exists(backup_media):
-                original_path = record["original_path"]
-                shutil.move(backup_media, original_path)
-                logger.info(
-                    "Restored media file to %s", original_path
-                )
-            else:
-                logger.warning(
-                    "Original media backup not found at %s — "
-                    "please manually restore the file to: %s",
-                    backup_media,
-                    record["original_path"],
-                )
+            self.db.update_status(srv_type, srv_item_id, "restored")
 
-        self.db.update_status(server_type, item_id, "restored")
         return True
 
     def stats(self) -> dict[str, Any]:
         return self.db.get_stats()
 
     def archive_item(self, server_type: str, item_id: str) -> dict[str, Any]:
-        """Archive a single chosen movie or episode."""
-        results: dict[str, Any] = {"success": False, "error": None}
-        
-        # 1. Find matching server
-        server = None
+        """Archive a single chosen movie or episode, propagating to all servers."""
+        results: dict[str, Any] = {"success": False, "error": None, "warnings": []}
+
+        # 1. Find source server
+        source = None
         for s in self.servers:
             if s.server_type == server_type:
-                server = s
+                source = s
                 break
-        
-        if not server:
+
+        if not source:
             results["error"] = f"No active {server_type} server configured."
             logger.error(results["error"])
             return results
 
         try:
             # 2. Get item metadata
-            item = server.get_item_metadata(item_id)
+            item = source.get_item_metadata(item_id)
             if not item:
                 raise ValueError("Item metadata could not be retrieved from server.")
 
@@ -2097,37 +2307,13 @@ class MediaSpektor:
             if not dummy_base64:
                 raise ValueError(f"No dummy template for extension '{ext}'")
 
+            dummy_bytes = base64.b64decode(dummy_base64)
             gb_saved = (original_size - 20000) / (1024**3)
 
-            logger.info("Spektoring single item: %s (%.2f GB)", title, gb_saved)
-            backup_poster_path: str | None = None
+            logger.info("Spektoring single item: %s (%.2f GB) — propagating to all servers", title, gb_saved)
+
+            # 3. Replace the file on disk exactly once (before poster loop)
             backup_media_path: str | None = None
-            poster_success = False
-
-            # A. Download and Overlay Poster
-            poster_tmp = f"/tmp/mediaspektor_poster_{item_id}.jpg"
-            if server.download_poster(item_id, poster_tmp):
-                # Backup original
-                poster_backup = self.backup_dir / f"{server_type}_{item_id}_poster_original.jpg"
-                shutil.copy2(poster_tmp, str(poster_backup))
-                backup_poster_path = str(poster_backup)
-
-                # Create and apply overlay
-                poster_overlay = self.backup_dir / f"{server_type}_{item_id}_poster_overlay.png"
-                self.overlay.apply_overlay(poster_tmp, str(poster_overlay), gb_saved)
-
-                # Upload modified poster
-                if server.upload_poster(item_id, str(poster_overlay)):
-                    poster_success = True
-                else:
-                    raise RuntimeError("Failed to upload modified poster back to server.")
-                
-                if os.path.exists(poster_tmp):
-                    os.unlink(poster_tmp)
-            else:
-                logger.warning("No poster found for %s — skipping overlay", title)
-
-            # B. Backup original media if configured
             if self.config.get("safety", {}).get("backup_original_media", False):
                 backup_media = self.backup_dir / f"{server_type}_{item_id}{ext}"
                 shutil.move(file_path, str(backup_media))
@@ -2136,34 +2322,73 @@ class MediaSpektor:
                 if os.path.exists(file_path):
                     os.unlink(file_path)
 
-            # C. Write dummy file
-            dummy_bytes = base64.b64decode(dummy_base64)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
                 f.write(dummy_bytes)
 
-            # D. Insert to DB
-            self.db.insert(
-                server_type=server_type,
-                server_item_id=item_id,
-                title=title,
-                media_type=media_type,
-                original_path=file_path,
-                original_size_bytes=original_size,
-                dummy_size_bytes=len(dummy_bytes),
-                backup_poster_path=backup_poster_path,
-                backup_media_path=backup_media_path,
-                status="archived"
-            )
+            # 4. Expand external IDs once (noop without TMDB key, episodes excluded)
+            expanded_ids = self._expand_external_ids(media_type, item["external_ids"])
 
-            # E. Unmonitor in Arr
+            # 5. Per-server propagation loop
+            for server in self.servers:
+                target = item if server is source else server.find_item(file_path, expanded_ids, media_type)
+                if target is None:
+                    if server is not source:
+                        logger.warning("No %s match for '%s' — skipping poster", server.server_type, title)
+                        results["warnings"].append(f"Skipped {server.server_type}: no match found")
+                    else:
+                        results["warnings"].append(f"Source server {server.server_type} item lost during processing")
+                    continue
+
+                local_id = target["id"]
+                local_type = server.server_type
+                backup_poster_path: str | None = None
+                poster_success = False
+
+                try:
+                    poster_tmp = f"/tmp/mediaspektor_poster_{local_type}_{local_id}.jpg"
+                    if server.download_poster(local_id, poster_tmp):
+                        poster_backup = self.backup_dir / f"{local_type}_{local_id}_poster_original.jpg"
+                        shutil.copy2(poster_tmp, str(poster_backup))
+                        backup_poster_path = str(poster_backup)
+
+                        poster_overlay = self.backup_dir / f"{local_type}_{local_id}_poster_overlay.png"
+                        self.overlay.apply_overlay(poster_tmp, str(poster_overlay), gb_saved)
+
+                        if server.upload_poster(local_id, str(poster_overlay)):
+                            poster_success = True
+                        else:
+                            logger.warning("Failed to upload poster to %s for %s", local_type, title)
+
+                        if os.path.exists(poster_tmp):
+                            os.unlink(poster_tmp)
+                except Exception as exc:
+                    logger.warning("Poster processing failed for %s on %s: %s", title, local_type, exc)
+
+                # Insert per-server DB row (only source gets backup_media_path)
+                self.db.insert(
+                    server_type=local_type,
+                    server_item_id=local_id,
+                    title=title,
+                    media_type=media_type,
+                    original_path=file_path,
+                    original_size_bytes=original_size,
+                    dummy_size_bytes=len(dummy_bytes),
+                    backup_poster_path=backup_poster_path,
+                    backup_media_path=backup_media_path if server is source else None,
+                    status="archived",
+                )
+
+                try:
+                    server.trigger_library_scan()
+                except Exception as exc:
+                    logger.warning("Library scan failed for %s: %s", local_type, exc)
+
+            # 6. Unmonitor in Arr once
             if media_type == "movie" and self.radarr:
                 self.radarr.unmonitor_movie_by_path(file_path)
             elif media_type == "episode" and self.sonarr:
                 self.sonarr.unmonitor_episode_by_path(file_path)
-
-            # F. Scan library
-            server.trigger_library_scan()
 
             results["success"] = True
             logger.info("Successfully archived and 'Spektored' item: %s", title)
@@ -2171,12 +2396,6 @@ class MediaSpektor:
 
         except Exception as exc:
             logger.error("Failed to archive item %s: %s", item_id, exc)
-            # Rollback poster if uploaded
-            if poster_success and backup_poster_path:
-                try:
-                    server.upload_poster(item_id, backup_poster_path)
-                except Exception as rb_exc:
-                    logger.error("Rollback poster failed: %s", rb_exc)
             results["error"] = str(exc)
             return results
 

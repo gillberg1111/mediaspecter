@@ -659,6 +659,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById("int-sonarr-url").value = sonarr.url || "";
                 document.getElementById("int-sonarr-key").value = sonarr.api_key || "";
 
+                document.getElementById("int-tmdb-key").value = (integrations.tmdb?.api_key) || "";
+
                 // Populate Aesthetics
                 const aesthetics = config.aesthetics || {};
                 document.getElementById("aes-overlay-enabled").checked = aesthetics.enable_poster_overlay !== undefined ? !!aesthetics.enable_poster_overlay : true;
@@ -739,6 +741,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     enabled: document.getElementById("int-sonarr-enabled").checked,
                     url: document.getElementById("int-sonarr-url").value.trim(),
                     api_key: document.getElementById("int-sonarr-key").value.trim()
+                },
+                tmdb: {
+                    api_key: document.getElementById("int-tmdb-key").value.trim()
                 }
             },
             safety: {

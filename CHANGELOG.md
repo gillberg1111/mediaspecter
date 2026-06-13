@@ -5,6 +5,20 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v0.7] - 2026-06-12
+
+### Added
+- **Multi-server propagation** — archiving (and restoring) an item now propagates to **every enabled server** that shares the same physical media. The file on disk is replaced once; the "ARCHIVED" poster overlay and archived state are then pushed to Plex, Jellyfin, and Emby. One database row is recorded per server so the status badge reflects archived/restored everywhere in the UI.
+- **Cross-server item matching** — a new `find_item` matcher on every connector resolves the same title across servers using **file path first**, then external IDs (TMDB → IMDB → TVDB) for movies. External IDs (`tmdb`/`imdb`/`tvdb`) are now extracted from Plex GUIDs and Jellyfin/Emby `ProviderIds`.
+- **TMDB ID bridge** — an optional, key-gated `TmdbClient` normalizes a movie's IDs across systems (so a Plex item with only an IMDB id still matches a Jellyfin item with only a TMDB id). Configure under `integrations.tmdb.api_key` (v3 key or v4 bearer token) or the `TMDB_API_KEY` env var; without a key, matching gracefully falls back to path + direct ID overlap. Added a TMDB API-key field to the Integrations settings UI.
+
+### Changed
+- `restore` now fans out across all sibling rows for a physical item (restores the file once, restores each server's poster, and updates status on every row).
+- Per-server poster propagation is **best-effort**: a server with no confident match is skipped with a warning rather than failing the whole operation.
+
+### Notes
+- Episode matching is **file-path only** for now (intentional — the shared library is mounted at the same path on every server). ID-based episode matching is deferred.
+
 ## [v0.6] - 2026-06-12
 
 ### Fixed

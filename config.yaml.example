@@ -42,6 +42,12 @@ integrations:
     enabled: false
     url: "http://localhost:8989"
     api_key: "YOUR_SONARR_KEY"
+  tmdb:
+    # Optional. Enables cross-server ID normalization so the same title is matched
+    # across Plex/Jellyfin/Emby even when they store different ID systems
+    # (e.g. Plex has only IMDB, Jellyfin only TMDB). Supports a v3 API key or a
+    # v4 read-access bearer token. Also readable from the TMDB_API_KEY env var.
+    api_key: ""
 
 safety:
   dry_run: true
