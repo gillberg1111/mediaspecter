@@ -8,6 +8,8 @@ To visually flag archived items, MediaSpektor synthesizes and uploads a premium 
 
 ## Features
 - 🚀 **Multi-Server Connectors**: Seamless support for Plex (via `plexapi`), Jellyfin, and Emby (via REST APIs).
+- 🔗 **Cross-Server State Propagation**: Run Plex, Jellyfin, and Emby against one shared library? Archive once, badge everywhere. MediaSpektor matches the same physical item across every enabled server — by file path first, falling back to external IDs (TMDB → IMDB → TVDB) — then replaces the file once and propagates the poster overlay and archived state to each server. Restore fans out the same way.
+- 🎬 **TMDB ID Bridge** *(optional)*: When servers store different ID systems (e.g. Plex has only IMDB while Jellyfin has only TMDB), an optional TMDB API key normalizes IDs across systems so matching still succeeds. Without a key, matching gracefully falls back to file path + direct ID overlap.
 - 🎥 **Valid Dummy Containers**: Programmatic generation of compliant, non-crashing `.mp4`, `.mkv`, and `.avi` template containers.
 - 🎨 **Glassmorphic Poster Badging**: Adds a sleek translucent banner at the bottom of posters detailing reclaimed space using Pillow.
 - 🤖 **\*Arr Integrations**: Automatically unmonitors movies in Radarr and episodes in Sonarr to prevent automatic re-downloads.
@@ -82,8 +84,8 @@ servers:
   - type: "jellyfin"
     enabled: false
     url: "http://localhost:8096"
-    api_key: "YOUR_JELLYFIN_API_KEY"
-    user_id: "YOUR_JELLYFIN_USER_ID"
+    username: "YOUR_JELLYFIN_USERNAME"   # Jellyfin authenticates by username/password
+    password: "YOUR_JELLYFIN_PASSWORD"   # a user token + user_id are derived at runtime
     libraries: ["Movies", "TV Shows"]
 
   - type: "emby"
@@ -115,6 +117,9 @@ integrations:
     enabled: false
     url: "http://localhost:8989"
     api_key: "YOUR_SONARR_KEY"
+  tmdb:
+    api_key: ""                  # Optional. Bridges ID systems for cross-server matching.
+                                 # Supports a v3 API key or v4 bearer token; also reads TMDB_API_KEY.
 
 safety:
   dry_run: true                # Default safety mode
