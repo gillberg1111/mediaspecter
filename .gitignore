@@ -37,3 +37,6 @@ config.yaml
 # Engineering documents and prompt markdown files
 deepseek_prompt.md
 mediaspektor_specification.md
+
+# Local AI collaboration workflow (personal artifact, not part of the repo)
+WORKFLOW.md
