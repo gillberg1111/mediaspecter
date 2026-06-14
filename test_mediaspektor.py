@@ -365,6 +365,28 @@ class TestIntegrations(unittest.TestCase):
         self.assertTrue("api/v3/episode/100" in mock_put.call_args[0][0])
         self.assertFalse(mock_put.call_args[1]["json"]["monitored"])
 
+    @patch("requests.get")
+    @patch("requests.put")
+    def test_sonarr_unmonitor_differing_root(self, mock_put, mock_get):
+        # Sonarr mounts /tv/...; the media server reports /data/tv/... — match by
+        # series folder leaf + episode file basename.
+        def routing(url, *args, **kwargs):
+            r = MagicMock(); r.status_code = 200
+            if "api/v3/series" in url:
+                r.json.return_value = [{"id": 1, "path": "/tv/Test Show", "tvdbId": 555}]
+            elif "api/v3/episodefile" in url:
+                r.json.return_value = [{"id": 99, "path": "/tv/Test Show/Season 1/Episode 1.mkv"}]
+            elif "api/v3/episode" in url:
+                r.json.return_value = [{"id": 100, "episodeFileId": 99, "monitored": True}]
+            return r
+        mock_get.side_effect = routing
+        mock_put.return_value.status_code = 200
+
+        client = SonarrClient({"url": "http://mock-sonarr:8989", "api_key": "mockkey"})
+        success = client.unmonitor_episode_by_path("/data/tv/Test Show/Season 1/Episode 1.mkv")
+        self.assertTrue(success)
+        self.assertFalse(mock_put.call_args[1]["json"]["monitored"])
+
 
 class TestFastAPI(unittest.TestCase):
     def setUp(self):
@@ -1287,6 +1309,42 @@ class TestPosterUploadEncoding(unittest.TestCase):
                 mock_post.return_value = MagicMock(raise_for_status=lambda: None)
                 self.assertTrue(emby.upload_poster("itm", poster))
             self.assertEqual(mock_post.call_args.kwargs["data"], base64.b64encode(raw))
+
+
+class TestRadarrMatching(unittest.TestCase):
+    """Radarr match must survive Radarr and the media server mounting different roots."""
+
+    MOVIES = [
+        {"id": 42, "title": "The Calendar Killer", "tmdbId": 1234, "imdbId": "tt9999",
+         "path": "/movies/The Calendar Killer (2024)", "monitored": True},
+        {"id": 99, "title": "Other", "tmdbId": 5678, "imdbId": "tt1111",
+         "path": "/movies/Other (2023)", "monitored": True},
+    ]
+
+    def test_match_by_tmdb_when_paths_differ(self):
+        # Media server reports /data/..., Radarr reports /movies/... — only IDs align.
+        m = RadarrClient._match_movie(
+            self.MOVIES, "/data/media/The Calendar Killer (2024)/film.mkv",
+            {"tmdb": "1234"},
+        )
+        self.assertIsNotNone(m)
+        self.assertEqual(m["id"], 42)
+
+    def test_match_by_imdb(self):
+        m = RadarrClient._match_movie(self.MOVIES, "/x/y.mkv", {"imdb": "tt9999"})
+        self.assertEqual(m["id"], 42)
+
+    def test_match_by_folder_leaf_when_root_differs(self):
+        # No IDs, but the movie folder name matches despite a different root.
+        m = RadarrClient._match_movie(
+            self.MOVIES, "/data/The Calendar Killer (2024)/film.mkv", {},
+        )
+        self.assertEqual(m["id"], 42)
+
+    def test_no_match_returns_none(self):
+        self.assertIsNone(
+            RadarrClient._match_movie(self.MOVIES, "/data/Nope (2020)/f.mkv", {"tmdb": "0"})
+        )
 
 
 class TestLibraryScanScoping(unittest.TestCase):

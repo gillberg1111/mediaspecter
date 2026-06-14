@@ -1788,48 +1788,66 @@ class RadarrClient:
         self.api_key = config["api_key"]
         self.headers: dict[str, str] = {"X-Api-Key": self.api_key}
 
-    def unmonitor_movie_by_path(self, file_path: str) -> bool:
+    def unmonitor_movie_by_path(self, file_path: str, external_ids: dict | None = None) -> bool:
         try:
             url = urljoin(self.base_url + "/", "api/v3/movie")
             resp = requests.get(url, headers=self.headers, timeout=30)
             resp.raise_for_status()
             movies = resp.json()
-            norm_path = os.path.normpath(file_path).lower()
-            for movie in movies:
-                movie_path = (
-                    os.path.normpath(movie.get("path", "")).lower()
+
+            match = self._match_movie(movies, file_path, external_ids or {})
+            if not match:
+                logger.warning(
+                    "Radarr: no matching movie for path '%s' (ids=%s) among %d movies. "
+                    "If Radarr mounts the library at a different path than the media server, "
+                    "set a TMDB key so MediaSpektor can match by ID instead of path.",
+                    file_path, external_ids or {}, len(movies),
                 )
-                folder = (
-                    os.path.normpath(movie.get("folderName", "")).lower()
-                )
-                if movie_path and (
-                    norm_path.startswith(movie_path)
-                    or norm_path.startswith(folder)
-                ):
-                    movie["monitored"] = False
-                    put_url = urljoin(
-                        self.base_url + "/", f"api/v3/movie/{movie['id']}"
-                    )
-                    put_resp = requests.put(
-                        put_url,
-                        headers=self.headers,
-                        json=movie,
-                        timeout=30,
-                    )
-                    put_resp.raise_for_status()
-                    logger.info(
-                        "Radarr: unmonitored movie id=%s path=%s",
-                        movie["id"],
-                        file_path,
-                    )
-                    return True
-            logger.warning(
-                "Radarr: no matching movie found for path '%s'", file_path
-            )
-            return False
+                return False
+
+            if not match.get("monitored", True):
+                logger.info("Radarr: movie id=%s already unmonitored", match["id"])
+                return True
+
+            match["monitored"] = False
+            put_url = urljoin(self.base_url + "/", f"api/v3/movie/{match['id']}")
+            put_resp = requests.put(put_url, headers=self.headers, json=match, timeout=30)
+            put_resp.raise_for_status()
+            logger.info("Radarr: unmonitored movie id=%s title=%s", match["id"], match.get("title"))
+            return True
         except Exception as exc:
             logger.error("Radarr: error unmonitoring movie: %s", exc)
             return False
+
+    @staticmethod
+    def _match_movie(movies: list[dict], file_path: str, external_ids: dict) -> dict | None:
+        """Find the Radarr movie for an archived file. Prefer ID matches (robust to
+        differing path roots between Radarr and the media servers), then fall back to
+        path heuristics: full-prefix, shared folder-leaf, or matching file basename."""
+        tmdb = str(external_ids.get("tmdb")) if external_ids.get("tmdb") else None
+        imdb = str(external_ids.get("imdb")).lower() if external_ids.get("imdb") else None
+
+        if tmdb:
+            for m in movies:
+                if str(m.get("tmdbId")) == tmdb:
+                    return m
+        if imdb:
+            for m in movies:
+                if (m.get("imdbId") or "").lower() == imdb:
+                    return m
+
+        norm_path = os.path.normpath(file_path).lower()
+        file_name = os.path.basename(norm_path)
+        file_dir_leaf = os.path.basename(os.path.dirname(norm_path))
+        for m in movies:
+            mp = os.path.normpath(m.get("path", "")).lower() if m.get("path") else ""
+            if mp and (norm_path.startswith(mp) or (file_dir_leaf and os.path.basename(mp) == file_dir_leaf)):
+                return m
+            mf = m.get("movieFile") or {}
+            rel = mf.get("relativePath") or mf.get("path") or ""
+            if rel and os.path.basename(os.path.normpath(rel).lower()) == file_name:
+                return m
+        return None
 
 
 class SonarrClient:
@@ -1838,7 +1856,7 @@ class SonarrClient:
         self.api_key = config["api_key"]
         self.headers: dict[str, str] = {"X-Api-Key": self.api_key}
 
-    def unmonitor_episode_by_path(self, file_path: str) -> bool:
+    def unmonitor_episode_by_path(self, file_path: str, external_ids: dict | None = None) -> bool:
         try:
             # Get all series
             url = urljoin(self.base_url + "/", "api/v3/series")
@@ -1847,13 +1865,28 @@ class SonarrClient:
             series_list = resp.json()
 
             norm_path = os.path.normpath(file_path).lower()
+            file_name = os.path.basename(norm_path)
+            path_parts = set(norm_path.split(os.sep))
+            ids = external_ids or {}
+            tvdb = str(ids.get("tvdb")) if ids.get("tvdb") else None
+            imdb = str(ids.get("imdb")).lower() if ids.get("imdb") else None
             for series in series_list:
                 series_path = (
                     os.path.normpath(series.get("path", "")).lower()
                 )
-                if series_path and norm_path.startswith(series_path):
+                series_leaf = os.path.basename(series_path) if series_path else ""
+                # Match the series by ID first (robust to Sonarr mounting a different
+                # root than the media server), then by full path prefix, then by the
+                # series folder name appearing as a component of the file path.
+                series_matched = (
+                    (tvdb and str(series.get("tvdbId")) == tvdb)
+                    or (imdb and (series.get("imdbId") or "").lower() == imdb)
+                    or (series_path and norm_path.startswith(series_path))
+                    or (series_leaf and series_leaf in path_parts)
+                )
+                if series_matched:
                     series_id = series["id"]
-                    
+
                     # Get episode files for this series to find matching file ID
                     file_url = urljoin(
                         self.base_url + "/",
@@ -1864,14 +1897,15 @@ class SonarrClient:
                     )
                     file_resp.raise_for_status()
                     episode_files = file_resp.json()
-                    
+
                     episode_file_id = None
                     for ep_file in episode_files:
                         ep_file_path = os.path.normpath(ep_file.get("path", "")).lower()
-                        if ep_file_path == norm_path:
+                        # Exact path, or same filename when the roots differ.
+                        if ep_file_path == norm_path or os.path.basename(ep_file_path) == file_name:
                             episode_file_id = ep_file.get("id")
                             break
-                    
+
                     if not episode_file_id:
                         continue
                     
@@ -2320,7 +2354,7 @@ class MediaSpektor:
 
                     # 5. Unmonitor in *Arr
                     if media_type == "movie" and self.radarr:
-                        self.radarr.unmonitor_movie_by_path(file_path)
+                        self.radarr.unmonitor_movie_by_path(file_path, item.get("external_ids"))
                     elif media_type == "episode" and self.sonarr:
                         self.sonarr.unmonitor_episode_by_path(file_path)
 
@@ -2727,7 +2761,7 @@ class MediaSpektor:
                     logger.warning("Library scan failed for %s: %s", server.server_type, exc)
 
             if media_type == "movie" and self.radarr:
-                self.radarr.unmonitor_movie_by_path(file_path)
+                self.radarr.unmonitor_movie_by_path(file_path, expanded_ids)
             elif media_type == "episode" and self.sonarr:
                 self.sonarr.unmonitor_episode_by_path(file_path)
 

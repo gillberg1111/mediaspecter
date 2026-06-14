@@ -5,6 +5,14 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.11] - 2026-06-14
+
+### Fixed
+- **Radarr/Sonarr were often not unmonitored after archiving.** The match required the media-server file path to start with the *Arr's folder path, which silently failed whenever Radarr/Sonarr mount the library at a different root (e.g. `/movies/…` vs `/data/movies/…`). Matching is now robust:
+  - **Radarr** matches by TMDB id, then IMDB id (using the IDs MediaSpektor already resolves), then path prefix, shared folder-leaf, or movie-file basename.
+  - **Sonarr** matches the series by TVDB/IMDB id, path prefix, or series folder-leaf, and the episode file by full path *or* filename.
+  - On a miss, the log now says how many movies/series were checked and suggests setting a TMDB key for ID-based matching.
+
 ## [v1.2.10] - 2026-06-14
 
 ### Changed
