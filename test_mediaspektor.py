@@ -121,7 +121,7 @@ class TestPosterOverlay(unittest.TestCase):
             # Verify dimensions
             with Image.open(output_path) as out_img:
                 self.assertEqual(out_img.size, (200, 300))
-                self.assertEqual(out_img.format, "PNG")
+                self.assertEqual(out_img.format, "JPEG")
         finally:
             if os.path.exists(input_path):
                 os.unlink(input_path)

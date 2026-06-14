@@ -968,10 +968,12 @@ class JellyfinConnector(BaseMediaServer):
         if not self.api_key:
             self.authenticate()
 
-    def _request(self, method: str, path: str, json_data: Any = None, data: Any = None, params: dict | None = None) -> Any:
+    def _request(self, method: str, path: str, json_data: Any = None, data: Any = None, params: dict | None = None, req_headers: dict | None = None) -> Any:
         self._ensure_auth()
         url = urljoin(self.base_url + "/", path.lstrip("/"))
         headers = self.headers.copy()
+        if req_headers:
+            headers.update(req_headers)
         if json_data is not None:
             headers["Content-Type"] = "application/json"
 
@@ -990,6 +992,8 @@ class JellyfinConnector(BaseMediaServer):
                 logger.info("Jellyfin: Received 401. Retrying authentication...")
                 self.authenticate()
                 headers = self.headers.copy()
+                if req_headers:
+                    headers.update(req_headers)
                 if json_data is not None:
                     headers["Content-Type"] = "application/json"
                 if method.upper() == "GET":
@@ -1112,6 +1116,7 @@ class JellyfinConnector(BaseMediaServer):
                     f"Items/{item_id}/Images/Primary",
                     data=f.read(),
                     params={"X-Emby-Client": "MediaSpektor"},
+                    req_headers={"Content-Type": "image/jpeg"},
                 )
             return True
         except Exception as exc:
@@ -1481,9 +1486,11 @@ class EmbyConnector(BaseMediaServer):
                 self.base_url + "/", f"Items/{item_id}/Images/Primary"
             )
             with open(source_path, "rb") as f:
+                upload_headers = self.headers.copy()
+                upload_headers["Content-Type"] = "image/jpeg"
                 resp = requests.post(
                     url,
-                    headers=self.headers,
+                    headers=upload_headers,
                     data=f.read(),
                     params={"X-Emby-Client": "MediaSpektor"},
                     timeout=30,
@@ -1914,7 +1921,8 @@ class PosterOverlay:
                 font=font,
             )
 
-            img.save(output_path, "PNG")
+            img = img.convert("RGB")
+            img.save(output_path, "JPEG", quality=90)
             return True
         except Exception as exc:
             logger.error("Poster overlay failed: %s", exc)
@@ -2188,7 +2196,7 @@ class MediaSpektor:
                         # Apply overlay
                         poster_overlay = (
                             self.backup_dir
-                            / f"{server.server_type}_{item_id}_poster_overlay.png"
+                            / f"{server.server_type}_{item_id}_poster_overlay.jpg"
                         )
                         self.overlay.apply_overlay(
                             poster_tmp, str(poster_overlay), gb_saved
@@ -2445,7 +2453,7 @@ class MediaSpektor:
                         shutil.copy2(poster_tmp, str(poster_backup))
                         backup_poster_path = str(poster_backup)
 
-                        poster_overlay = self.backup_dir / f"{local_type}_{local_id}_poster_overlay.png"
+                        poster_overlay = self.backup_dir / f"{local_type}_{local_id}_poster_overlay.jpg"
                         self.overlay.apply_overlay(poster_tmp, str(poster_overlay), gb_saved)
 
                         if not server.upload_poster(local_id, str(poster_overlay)):
