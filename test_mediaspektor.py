@@ -1717,5 +1717,132 @@ class TestShowMatching(unittest.TestCase):
             mediaspektor.GLOBAL_SPEKTOR = old
 
 
+class TestRollupBadges(unittest.TestCase):
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self.temp_config = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False)
+        self.temp_config.close()
+        import yaml
+        with open(self.temp_config.name, "w") as f:
+            yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
+        self.spektor = MediaSpektor(self.temp_config.name)
+        self.spektor.db = Database(self.temp_db.name)
+
+    def tearDown(self):
+        for p in (self.temp_db.name, self.temp_config.name):
+            if os.path.exists(p):
+                os.unlink(p)
+
+    def test_rollup_db_methods(self):
+        self.spektor.db.add_rollup_badge("plex", "123", "season", "/backups/plex_123_season_original.jpg")
+        row = self.spektor.db.get_rollup_badge("plex", "123")
+        self.assertIsNotNone(row)
+        self.assertEqual(row["kind"], "season")
+        self.assertEqual(row["backup_poster_path"], "/backups/plex_123_season_original.jpg")
+        self.spektor.db.remove_rollup_badge("plex", "123")
+        self.assertIsNone(self.spektor.db.get_rollup_badge("plex", "123"))
+
+    def test_sonarr_season_ended(self):
+        past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        future = (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # all past -> True
+        self.assertTrue(MediaSpektor._sonarr_season_ended(
+            [{"seasonNumber": 1, "airDateUtc": past}], 1))
+        # future -> False
+        self.assertFalse(MediaSpektor._sonarr_season_ended(
+            [{"seasonNumber": 1, "airDateUtc": past}, {"seasonNumber": 1, "airDateUtc": future}], 1))
+        # null airDateUtc -> False
+        self.assertFalse(MediaSpektor._sonarr_season_ended(
+            [{"seasonNumber": 1, "airDateUtc": None}], 1))
+        # empty -> False
+        self.assertFalse(MediaSpektor._sonarr_season_ended([], 1))
+
+    def test_reconcile_badges_season_and_series(self):
+        show = {"id": "s1", "title": "Test Show", "year": 2020, "external_ids": {"tvdb": "123"}}
+        season = {"id": "sea1", "season_number": 1}
+        ep1 = {"id": "e1", "original_size": 100_000_000}
+        ep2 = {"id": "e2", "original_size": 200_000_000}
+        self.spektor.db.insert(
+            server_type="plex", server_item_id="e1", title="E1", media_type="episode",
+            original_path="/tv/e1.mkv", original_size_bytes=100_000_000, dummy_size_bytes=1024,
+            status="archived"
+        )
+        self.spektor.db.insert(
+            server_type="plex", server_item_id="e2", title="E2", media_type="episode",
+            original_path="/tv/e2.mkv", original_size_bytes=200_000_000, dummy_size_bytes=1024,
+            status="archived"
+        )
+
+        mock = MagicMock()
+        mock.server_type = "plex"
+        mock.config = {"libraries": ["TV"]}
+        mock.get_shows.return_value = [show]
+        mock.get_seasons.return_value = [season]
+        mock.get_episodes.return_value = [ep1, ep2]
+        mock.download_poster.return_value = True
+        mock.upload_poster.return_value = True
+        self.spektor.servers = [mock]
+
+        self.spektor.overlay.apply_overlay = MagicMock(return_value=True)
+        self.spektor.sonarr = MagicMock()
+        self.spektor.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
+        past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.spektor.sonarr.get_series_episodes.return_value = [
+            {"seasonNumber": 1, "airDateUtc": past},
+        ]
+
+        with patch("mediaspektor.shutil.copy2"), patch("os.path.exists", return_value=False):
+            res = self.spektor.reconcile_rollup_badges()
+        self.assertIn("plex:season:sea1", res["badged"])
+        self.assertIn("plex:series:s1", res["badged"])
+        self.assertIsNotNone(self.spektor.db.get_rollup_badge("plex", "sea1"))
+        self.assertIsNotNone(self.spektor.db.get_rollup_badge("plex", "s1"))
+
+    def test_reconcile_unbadges_when_not_fully_archived(self):
+        show = {"id": "s1", "title": "Show", "year": 2020, "external_ids": {"tvdb": "123"}}
+        season = {"id": "sea1", "season_number": 1}
+        self.spektor.db.insert(
+            server_type="plex", server_item_id="e1", title="E1", media_type="episode",
+            original_path="/tv/e1.mkv", original_size_bytes=100_000_000, dummy_size_bytes=1024,
+            status="archived"
+        )
+        # e2 NOT archived -> season not fully archived
+        ep1 = {"id": "e1", "original_size": 100_000_000}
+        ep2 = {"id": "e2", "original_size": 200_000_000}
+        backup_path = str(self.spektor.backup_dir / "plex_sea1_season_original.jpg")
+        with open(backup_path, "w") as f:
+            f.write("fake")
+        self.spektor.db.add_rollup_badge("plex", "sea1", "season", backup_path)
+
+        mock = MagicMock()
+        mock.server_type = "plex"
+        mock.config = {"libraries": ["TV"]}
+        mock.get_shows.return_value = [show]
+        mock.get_seasons.return_value = [season]
+        mock.get_episodes.return_value = [ep1, ep2]
+        mock.download_poster.return_value = True
+        mock.upload_poster.return_value = True
+        self.spektor.servers = [mock]
+
+        self.spektor.sonarr = MagicMock()
+        self.spektor.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
+        past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.spektor.sonarr.get_series_episodes.return_value = [
+            {"seasonNumber": 1, "airDateUtc": past},
+        ]
+
+        res = self.spektor.reconcile_rollup_badges()
+        self.assertIn("plex:season:sea1", res["unbadged"])
+        self.assertIsNone(self.spektor.db.get_rollup_badge("plex", "sea1"))
+        mock.upload_poster.assert_called_with("sea1", backup_path)
+
+    def test_reconcile_skips_without_sonarr(self):
+        self.spektor.sonarr = None
+        res = self.spektor.reconcile_rollup_badges()
+        self.assertIn("skipped", res)
+        self.assertEqual(res["skipped"], "Sonarr not configured")
+
+
 if __name__ == "__main__":
     unittest.main()

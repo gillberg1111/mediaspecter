@@ -232,7 +232,7 @@ body {
     opacity: 0.6;
     font-weight: 600;
 }
-.header-actions { display: flex; gap: 0.7rem; flex-shrink: 0; }
+.header-actions { display: flex; gap: 0.7rem; flex-shrink: 0; flex-wrap: wrap; }
 
 /* --------------------------------------------------------------------------
    Buttons

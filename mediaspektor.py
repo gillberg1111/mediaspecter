@@ -44,6 +44,9 @@ HTTP.mount("https://", _pool_adapter)
 # Computed once per show per process; reused on every /api/shows revalidate.
 _SHOW_SIZE_CACHE: dict[tuple, int] = {}
 
+import threading
+_RECONCILE_LOCK = threading.Lock()
+
 
 def _parse_iso_date(date_str: str | None) -> datetime | None:
     if not date_str:
@@ -527,9 +530,43 @@ class Database:
                     PRIMARY KEY (server_type, server_item_id)
                 )"""
             )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS rollup_badges (
+                    server_type TEXT NOT NULL,
+                    item_id     TEXT NOT NULL,
+                    kind        TEXT NOT NULL,
+                    backup_poster_path TEXT,
+                    PRIMARY KEY (server_type, item_id)
+                )"""
+            )
             conn.commit()
         finally:
             conn.close()
+
+    def add_rollup_badge(self, server_type, item_id, kind, backup_poster_path):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO rollup_badges (server_type, item_id, kind, backup_poster_path) VALUES (?,?,?,?)",
+                (server_type, str(item_id), kind, backup_poster_path),
+            ); conn.commit()
+        finally: conn.close()
+
+    def get_rollup_badge(self, server_type, item_id):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM rollup_badges WHERE server_type=? AND item_id=?",
+                               (server_type, str(item_id))).fetchone()
+            return dict(row) if row else None
+        finally: conn.close()
+
+    def remove_rollup_badge(self, server_type, item_id):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("DELETE FROM rollup_badges WHERE server_type=? AND item_id=?",
+                         (server_type, str(item_id))); conn.commit()
+        finally: conn.close()
 
     def insert(self, **kwargs: Any) -> None:
         columns = ", ".join(kwargs.keys())
@@ -2046,6 +2083,41 @@ class SonarrClient:
             logger.error("Sonarr: error reading monitored state: %s", exc)
             return None
 
+    def find_series(self, external_ids: dict | None, title: str | None, year=None) -> dict | None:
+        """Return the Sonarr series matching a media-server show: by TVDB id, then IMDB id,
+        then normalized title (+year). None if not found."""
+        try:
+            resp = requests.get(urljoin(self.base_url + "/", "api/v3/series"),
+                                headers=self.headers, timeout=30)
+            resp.raise_for_status()
+            series = resp.json()
+        except Exception as exc:
+            logger.error("Sonarr find_series error: %s", exc)
+            return None
+        ids = external_ids or {}
+        tvdb = str(ids.get("tvdb")) if ids.get("tvdb") else None
+        imdb = str(ids.get("imdb")).lower() if ids.get("imdb") else None
+        if tvdb:
+            for s in series:
+                if str(s.get("tvdbId")) == tvdb: return s
+        if imdb:
+            for s in series:
+                if (s.get("imdbId") or "").lower() == imdb: return s
+        for s in series:
+            if _titles_match(title, s.get("title"), year, s.get("year")):
+                return s
+        return None
+
+    def get_series_episodes(self, series_id) -> list[dict]:
+        try:
+            resp = requests.get(urljoin(self.base_url + "/", f"api/v3/episode?seriesId={series_id}"),
+                                headers=self.headers, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as exc:
+            logger.error("Sonarr get_series_episodes error: %s", exc)
+            return []
+
 
 # ---------------------------------------------------------------------------
 # Poster Overlay Engine
@@ -2705,6 +2777,103 @@ class MediaSpektor:
             return {"success": False, "error": f"No matching item found in {arr} (check path/IDs)."}
         return {"success": True, "monitored": monitored, "arr": arr}
 
+    @staticmethod
+    def _sonarr_season_ended(sonarr_episodes: list[dict], season_number: int) -> bool:
+        """A season is 'ended' when every Sonarr episode in it has aired (airDateUtc set and
+        in the past). An unaired episode (null or future airDateUtc) means it may still grow."""
+        eps = [e for e in sonarr_episodes if e.get("seasonNumber") == season_number]
+        if not eps:
+            return False
+        now = datetime.now(timezone.utc)
+        for e in eps:
+            d = _parse_iso_date(e.get("airDateUtc"))
+            if d is None:
+                return False
+            if d > now.replace(tzinfo=None):
+                return False
+        return True
+
+    def _saved_bytes_for(self, server_type: str, item_ids: list[str]) -> int:
+        total = 0
+        for iid in item_ids:
+            row = self.db.get_item(server_type, str(iid))
+            if row:
+                total += max(0, (row.get("original_size_bytes", 0) or 0) - (row.get("dummy_size_bytes", 0) or 0))
+        return total
+
+    def _apply_rollup_badge(self, server, item_id, kind, should_badge, saved_bytes, results):
+        existing = self.db.get_rollup_badge(server.server_type, str(item_id))
+        gb = saved_bytes / (1024 ** 3)
+        try:
+            if should_badge and not existing:
+                tmp = f"/tmp/ms_rollup_{server.server_type}_{item_id}.jpg"
+                if not server.download_poster(str(item_id), tmp):
+                    return
+                backup = self.backup_dir / f"{server.server_type}_{item_id}_{kind}_original.jpg"
+                shutil.copy2(tmp, str(backup))
+                overlay = self.backup_dir / f"{server.server_type}_{item_id}_{kind}_overlay.jpg"
+                self.overlay.apply_overlay(tmp, str(overlay), gb)
+                if server.upload_poster(str(item_id), str(overlay)):
+                    self.db.add_rollup_badge(server.server_type, item_id, kind, str(backup))
+                    results["badged"].append(f"{server.server_type}:{kind}:{item_id}")
+                if os.path.exists(tmp): os.unlink(tmp)
+            elif not should_badge and existing:
+                backup = existing.get("backup_poster_path")
+                if backup and os.path.exists(backup):
+                    server.upload_poster(str(item_id), backup)
+                self.db.remove_rollup_badge(server.server_type, item_id)
+                results["unbadged"].append(f"{server.server_type}:{kind}:{item_id}")
+        except Exception as exc:
+            results["errors"].append(f"{server.server_type}:{kind}:{item_id}: {exc}")
+
+    def reconcile_rollup_badges(self) -> dict[str, Any]:
+        """Badge/un-badge season & series posters for fully-archived, ended seasons/series.
+        Sonarr-gated. Safe to call repeatedly; runs at most once at a time."""
+        results = {"badged": [], "unbadged": [], "errors": []}
+        if not self.sonarr:
+            results["skipped"] = "Sonarr not configured"
+            return results
+        if not _RECONCILE_LOCK.acquire(blocking=False):
+            results["skipped"] = "already running"
+            return results
+        try:
+            for server in self.servers:
+                libs = server.config.get("libraries", [])
+                for show in server.get_shows(libs):
+                    try:
+                        series = self.sonarr.find_series(show.get("external_ids"), show.get("title"), show.get("year"))
+                        if not series:
+                            continue
+                        sonarr_eps = self.sonarr.get_series_episodes(series["id"])
+                        series_ended = (series.get("status") == "ended") or bool(series.get("ended"))
+                        seasons = server.get_seasons(show["id"])
+                        all_archived, any_archived, series_saved = True, False, 0
+                        for season in seasons:
+                            snum = season.get("season_number")
+                            if not snum or snum == 0:
+                                continue
+                            eps = server.get_episodes(show["id"], season["id"])
+                            if not eps:
+                                all_archived = False
+                                continue
+                            archived_ids = [str(e["id"]) for e in eps if self.db.item_exists(server.server_type, str(e["id"]))]
+                            season_full = len(archived_ids) == len(eps)
+                            saved = self._saved_bytes_for(server.server_type, archived_ids)
+                            series_saved += saved
+                            if archived_ids: any_archived = True
+                            if not season_full: all_archived = False
+                            should = season_full and self._sonarr_season_ended(sonarr_eps, snum)
+                            self._apply_rollup_badge(server, season["id"], "season", should, saved, results)
+                        should_series = any_archived and all_archived and series_ended
+                        self._apply_rollup_badge(server, show["id"], "series", should_series, series_saved, results)
+                    except Exception as exc:
+                        results["errors"].append(f"{server.server_type}:{show.get('id')}: {exc}")
+        finally:
+            _RECONCILE_LOCK.release()
+        logger.info("Rollup reconcile: %d badged, %d unbadged, %d errors",
+                    len(results["badged"]), len(results["unbadged"]), len(results["errors"]))
+        return results
+
     def _replace_with_dummy(
         self, file_path: str, dummy_bytes: bytes, backup_target: str | None = None
     ) -> str | None:
@@ -3311,10 +3480,18 @@ class ActionReq(BaseModel):
 def run_bg_spektor(server_type: str, item_id: str):
     spektor = get_spektor()
     spektor.archive_item(server_type, item_id)
+    try:
+        get_spektor().reconcile_rollup_badges()
+    except Exception as exc:
+        logger.error("Rollup reconcile after action failed: %s", exc)
 
 def run_bg_restore(server_type: str, item_id: str):
     spektor = get_spektor()
     spektor.restore(server_type, item_id)
+    try:
+        get_spektor().reconcile_rollup_badges()
+    except Exception as exc:
+        logger.error("Rollup reconcile after action failed: %s", exc)
 
 @app.post("/api/spektor", dependencies=[Depends(verify_auth)])
 def trigger_spektor(req: ActionReq, bg_tasks: BackgroundTasks):
@@ -3334,11 +3511,26 @@ def run_bg_bulk(server_type: str, show_id: str, season_id: str | None):
     spektor = get_spektor()
     plan = spektor.bulk_episode_plan(server_type, show_id, season_id)
     spektor.bulk_archive(server_type, plan.get("item_ids", []))
+    try:
+        get_spektor().reconcile_rollup_badges()
+    except Exception as exc:
+        logger.error("Rollup reconcile after action failed: %s", exc)
 
 @app.post("/api/spektor-bulk", dependencies=[Depends(verify_auth)])
 def trigger_bulk(req: BulkSpektorReq, bg_tasks: BackgroundTasks):
     bg_tasks.add_task(run_bg_bulk, req.server_type, req.show_id, req.season_id)
     return {"success": True, "message": "Bulk archival queued as background task."}
+
+def run_bg_reconcile():
+    try:
+        get_spektor().reconcile_rollup_badges()
+    except Exception as exc:
+        logger.error("Manual rollup reconcile failed: %s", exc)
+
+@app.post("/api/reconcile-badges", dependencies=[Depends(verify_auth)])
+def trigger_reconcile(bg_tasks: BackgroundTasks):
+    bg_tasks.add_task(run_bg_reconcile)
+    return {"success": True, "message": "Badge reconciliation queued."}
 
 @app.post("/api/restore", dependencies=[Depends(verify_auth)])
 def trigger_restore(req: ActionReq, bg_tasks: BackgroundTasks):
@@ -3485,6 +3677,10 @@ def main() -> None:
         if args.archive:
             results = ghost.archive(dry_run=dry_run)
             print(json.dumps(results, indent=2))
+            try:
+                ghost.reconcile_rollup_badges()
+            except Exception as exc:
+                logger.error("Rollup reconcile after archive run failed: %s", exc)
             if results["errors"]:
                 sys.exit(1)
             return
@@ -3495,6 +3691,14 @@ def main() -> None:
         # Defaulting to "*" would let any client spoof their scheme/address; an
         # operator behind a reverse proxy sets security.trusted_proxies to that
         # proxy's address (a single IP, comma list, or "*" if they accept the risk).
+        def _badge_timer():
+            while True:
+                time.sleep(6 * 3600)
+                try:
+                    get_spektor().reconcile_rollup_badges()
+                except Exception as exc:
+                    logger.error("Scheduled rollup reconcile failed: %s", exc)
+        threading.Thread(target=_badge_timer, daemon=True).start()
         trusted = get_spektor().config.get("security", {}).get("trusted_proxies")
         if trusted:
             uvicorn.run(

@@ -304,6 +304,17 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("Refreshed data from server", "success");
     });
 
+    const btnReconcile = document.getElementById("btn-reconcile");
+    if (btnReconcile) {
+        btnReconcile.addEventListener("click", () => {
+            showToast("Reconciling season/series badges…", "warning");
+            fetch("/api/reconcile-badges", { method: "POST" })
+                .then(r => r.json())
+                .then(d => showToast(d.success ? "Badge reconciliation queued." : "Failed to queue.", d.success ? "success" : "error"))
+                .catch(() => showToast("Server error during reconciliation.", "error"));
+        });
+    }
+
     // -----------------------------------------------------------------------
     // Tab 1: Dashboard Logic
     // -----------------------------------------------------------------------

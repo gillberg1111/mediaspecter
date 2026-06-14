@@ -5,6 +5,14 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.5.0] - 2026-06-14
+
+### Added
+- **Season & series "rollup" badges.** When a finished season is fully Spektored, its **season poster** gets the `ARCHIVED • X GB SAVED` badge; when an **ended** series (per Sonarr) has every season fully Spektored, its **series poster** is badged too. Badges revert automatically when they stop being true — an episode is restored, or Sonarr flips the show back to *Continuing*. The series itself stays **monitored** in Sonarr (so a revival still gets picked up), and badges propagate to every matched server.
+  - Sonarr-gated: a show not found in Sonarr (or no Sonarr configured) keeps its per-episode badges only.
+  - Reconciliation runs after archive/restore, on the nightly `--archive` run, on a built-in 6-hour timer, and on demand via a new **"Refresh badges"** button on the dashboard.
+  - Original season/series posters are backed up before badging so reverts are exact.
+
 ## [v1.4.1] - 2026-06-14
 
 ### Fixed
