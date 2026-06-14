@@ -851,6 +851,31 @@ class TestPropagation(unittest.TestCase):
         self.assertEqual(spektor.db.get_stats()["total_items"], 1)
         jf.upload_poster.assert_not_called()
 
+    @patch("mediaspektor.JellyfinConnector.authenticate")
+    @patch("mediaspektor.PlexServer")
+    def test_archive_item_dry_run_does_not_touch_files(self, mock_plex_cls, mock_jf_auth):
+        """Dry-Run must block the single-item (UI) archive — no file swap, no DB row."""
+        self.config_data["safety"]["dry_run"] = True
+        plex_item = {
+            "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": "123", "imdb": "tt456", "tvdb": None},
+        }
+        plex = MagicMock()
+        plex.server_type = "plex"
+        plex.get_item_metadata.return_value = plex_item
+
+        spektor = self._make_spektor_with_mock_servers(plex)
+
+        with patch.object(MediaSpektor, "_replace_with_dummy") as mock_swap:
+            result = spektor.archive_item("plex", "1")
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result.get("dry_run"))
+        mock_swap.assert_not_called()
+        plex.upload_poster.assert_not_called()
+        self.assertEqual(spektor.db.get_stats()["total_items"], 0)
+
     def test_restore_fans_out(self):
         spektor = self._make_spektor()
 
@@ -1110,6 +1135,57 @@ class TestRegenerate(unittest.TestCase):
             with open(movie_path, "rb") as f:
                 content = f.read()
             self.assertNotEqual(content, b"original large movie data")
+
+    def test_regenerate_video_refuses_non_archived(self):
+        with tempfile.TemporaryDirectory() as d:
+            movie_path = os.path.join(d, "movie.mkv")
+            with open(movie_path, "wb") as f:
+                f.write(b"restored real media")
+
+            self.spektor.db.insert(
+                server_type="plex",
+                server_item_id="12345",
+                title="Test Movie",
+                media_type="movie",
+                original_path=movie_path,
+                original_size_bytes=10 * 1024 * 1024 * 1024,
+                dummy_size_bytes=2048,
+                backup_poster_path=None,
+                backup_media_path=None,
+                status="restored",
+            )
+
+            res = self.spektor.regenerate_item("plex", "12345", "video")
+            self.assertFalse(res["success"])
+            self.assertIn("not 'archived'", res["error"])
+            # File must be untouched.
+            with open(movie_path, "rb") as f:
+                self.assertEqual(f.read(), b"restored real media")
+
+    def test_regenerate_video_refuses_large_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            movie_path = os.path.join(d, "movie.mkv")
+            with open(movie_path, "wb") as f:
+                f.seek(60 * 1024 * 1024)  # 60 MB sparse file > safety ceiling
+                f.write(b"\0")
+
+            self.spektor.db.insert(
+                server_type="plex",
+                server_item_id="12345",
+                title="Test Movie",
+                media_type="movie",
+                original_path=movie_path,
+                original_size_bytes=10 * 1024 * 1024 * 1024,
+                dummy_size_bytes=2048,
+                backup_poster_path=None,
+                backup_media_path=None,
+                status="archived",
+            )
+
+            res = self.spektor.regenerate_item("plex", "12345", "video")
+            self.assertFalse(res["success"])
+            self.assertIn("real media", res["error"])
+            self.assertTrue(os.path.getsize(movie_path) > 50 * 1024 * 1024)
 
 
 if __name__ == "__main__":

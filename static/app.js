@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentMovies = [];
     let currentShows = [];
     let logInterval = null;
+    let logPaused = false;
 
     // Global fetch interceptor for authentication
     const originalFetch = window.fetch;
@@ -330,9 +331,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (logInterval) clearInterval(logInterval);
         
         function fetchLogs() {
+            if (logPaused) return; // Frozen so the user can highlight & copy.
             fetch("/api/logs")
                 .then(res => res.json())
                 .then(logs => {
+                    if (logPaused) return; // May have paused mid-request.
                     const consoleEl = document.getElementById("log-console");
                     if (logs.length === 0) {
                         consoleEl.textContent = "No log records found. Start scanning to inspect logs here.";
@@ -346,6 +349,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
         fetchLogs();
         logInterval = setInterval(fetchLogs, 2000); // Poll every 2s
+    }
+
+    // Pause/resume the live log so it can be highlighted and copied.
+    const btnLogPause = document.getElementById("btn-log-pause");
+    if (btnLogPause) {
+        btnLogPause.addEventListener("click", () => {
+            logPaused = !logPaused;
+            const pulse = document.getElementById("log-pulse");
+            if (logPaused) {
+                btnLogPause.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
+                if (pulse) { pulse.textContent = "Paused"; pulse.classList.add("paused"); }
+            } else {
+                btnLogPause.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+                if (pulse) { pulse.textContent = "Live"; pulse.classList.remove("paused"); }
+            }
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -658,12 +677,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }, 2000);
             } else {
-                showToast(`Error: ${data.error || 'Failed to queue action.'}`, "danger");
+                showToast(`Error: ${data.error || 'Failed to queue action.'}`, "error");
             }
         })
         .catch(err => {
             console.error("Action error:", err);
-            showToast("Server error during action request.", "danger");
+            showToast("Server error during action request.", "error");
         });
     });
 
@@ -684,12 +703,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.success) {
                 showToast(`Regeneration started successfully. Check dashboard log.`, "success");
             } else {
-                showToast(`Error: ${data.error || 'Failed to queue regeneration.'}`, "danger");
+                showToast(`Error: ${data.error || 'Failed to queue regeneration.'}`, "error");
             }
         })
         .catch(err => {
             console.error("Regeneration error:", err);
-            showToast("Server error during regeneration request.", "danger");
+            showToast("Server error during regeneration request.", "error");
         });
     };
 

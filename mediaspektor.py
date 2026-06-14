@@ -2392,6 +2392,32 @@ class MediaSpektor:
                 results["error"] = "Original path not found in database."
                 return results
 
+            # Data-safety guard: only regenerate the dummy for an item that is
+            # genuinely archived AND whose on-disk file is still a tiny dummy.
+            # _replace_with_dummy(backup_target=None) overwrites in place with no
+            # backup, so if the DB and disk ever drift (e.g. a restored file still
+            # flagged archived) this would destroy real media irrecoverably.
+            if db_item.get("status") != "archived":
+                results["error"] = (
+                    f"Refusing to regenerate video — item status is "
+                    f"'{db_item.get('status')}', not 'archived'."
+                )
+                return results
+
+            SAFE_DUMMY_CEILING = 50 * 1024 * 1024  # 50 MB — no dummy is this big
+            try:
+                on_disk = os.path.getsize(original_path)
+            except OSError as exc:
+                results["error"] = f"Cannot stat file at '{original_path}': {exc}"
+                return results
+            if on_disk > SAFE_DUMMY_CEILING:
+                results["error"] = (
+                    f"Refusing to overwrite '{original_path}' ({on_disk / (1024**2):.0f} MB) "
+                    f"— file is too large to be a dummy, it looks like real media."
+                )
+                logger.error(results["error"])
+                return results
+
             ext = os.path.splitext(original_path)[1].lower()
             dummy_b64 = DUMMY_VIDEOS.get(ext) or DUMMY_VIDEOS.get(".mp4")
             dummy_bytes = base64.b64decode(dummy_b64)
@@ -2514,6 +2540,22 @@ class MediaSpektor:
 
             dummy_bytes = base64.b64decode(dummy_base64)
             gb_saved = (original_size - 20000) / (1024**3)
+
+            # SAFETY GATE — honor the Dry-Run switch for the single-item
+            # (UI-triggered) archive. Without this the "Confirm Spektor" button
+            # irreversibly swaps the real media file even with Dry-Run enabled,
+            # which has destroyed real files. (allow_automated_archival is NOT
+            # gated here — that switch governs the scheduled/bulk run; a manual
+            # click is a deliberate, explicit action.)
+            if self.config.get("safety", {}).get("dry_run", False):
+                logger.info("[DRY-RUN] Would Spektor: %s (%.2f GB) — no files changed.", title, gb_saved)
+                results["success"] = True
+                results["dry_run"] = True
+                results["error"] = None
+                results["warnings"].append(
+                    f"Dry-Run is enabled: simulated archiving '{title}' ({gb_saved:.2f} GB). No files were modified."
+                )
+                return results
 
             logger.info("Spektoring single item: %s (%.2f GB) — propagating to all servers", title, gb_saved)
 

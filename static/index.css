@@ -331,6 +331,8 @@ body {
     font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-3);
 }
 .pulse-indicator::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: ping 2.4s infinite; }
+.pulse-indicator.paused { color: var(--text-muted); }
+.pulse-indicator.paused::before { background: var(--text-muted); animation: none; }
 .console {
     font-family: var(--mono);
     font-variant-numeric: tabular-nums;

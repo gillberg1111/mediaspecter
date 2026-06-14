@@ -5,6 +5,17 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.5] - 2026-06-14
+
+### Fixed
+- **CRITICAL data-loss fix:** The single-item "Confirm Spektor" archive (the dashboard button) ignored the `safety.dry_run` switch entirely — it swapped the real media file for a dummy even with Dry-Run enabled, irreversibly destroying originals when `backup_original_media` was off. The manual archive now honors Dry-Run exactly like the scheduled run: it logs `[DRY-RUN] Would Spektor…` and changes nothing.
+- Added a data-safety guard to the "Fix Video" regeneration: it now refuses to run unless the item's status is `archived` **and** the on-disk file is small enough to be a dummy (≤ 50 MB), so it can never overwrite real media (it writes in place with no backup).
+- Failure notifications used an unhandled `"danger"` toast type and rendered as a green success checkmark with no error styling — real errors looked like successes. Corrected to the styled `error` type.
+- The "Fix Poster" / "Fix Video" buttons used an undefined `btn-info` CSS class and rendered unstyled; restyled with the existing `btn-secondary`.
+
+### Added
+- **Pause/Resume control on the dashboard activity log.** The live log refreshes every 2 s, which cleared any in-progress text selection; you can now freeze it to highlight and copy, then resume.
+
 ## [v1.2.4] - 2026-06-14
 
 ### Fixed
