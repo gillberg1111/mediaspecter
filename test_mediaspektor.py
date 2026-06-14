@@ -936,5 +936,21 @@ class TestSafeReplace(unittest.TestCase):
             self.assertEqual(os.stat(f).st_mode & 0o777, 0o644)
 
 
+class TestBackupDirFallback(unittest.TestCase):
+    def test_placeholder_backup_dir_falls_back_to_config_dir(self):
+        # The seeded example placeholder must not crash startup (it isn't writable);
+        # it should fall back to <config dir>/backups.
+        import yaml
+        with tempfile.TemporaryDirectory() as d:
+            cfg = os.path.join(d, "config.yaml")
+            with open(cfg, "w") as f:
+                yaml.safe_dump(
+                    {"servers": [], "safety": {"backup_directory": "/path/to/cold/storage/backup"}}, f
+                )
+            spektor = MediaSpektor(cfg)
+            self.assertEqual(str(spektor.backup_dir), os.path.join(d, "backups"))
+            self.assertTrue(os.path.isdir(spektor.backup_dir))
+
+
 if __name__ == "__main__":
     unittest.main()

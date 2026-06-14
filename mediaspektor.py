@@ -1933,18 +1933,21 @@ class MediaSpektor:
         self.db = Database(db_path)
 
         self.overlay = PosterOverlay(self.config)
-        backup_path = self.config.get("safety", {}).get(
-            "backup_directory", os.path.join(config_dir, "backups")
-        )
+        # Poster (and optional media) backups. Treat an empty value or the example
+        # placeholder as "unset" and default to a writable dir next to the config.
+        default_backups = os.path.join(config_dir, "backups")
+        backup_path = self.config.get("safety", {}).get("backup_directory") or default_backups
+        if str(backup_path).startswith("/path/to"):
+            backup_path = default_backups
         self.backup_dir = Path(backup_path)
         try:
             self.backup_dir.mkdir(parents=True, exist_ok=True)
         except (OSError, PermissionError) as exc:
             logger.warning(
-                "Cannot create backup directory '%s': %s. Using ./backups instead.",
-                backup_path, exc,
+                "Cannot create backup directory '%s': %s. Falling back to '%s'.",
+                backup_path, exc, default_backups,
             )
-            self.backup_dir = Path("./backups")
+            self.backup_dir = Path(default_backups)
             self.backup_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize server connectors

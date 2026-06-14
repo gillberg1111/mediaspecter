@@ -52,7 +52,7 @@ integrations:
 safety:
   dry_run: true
   backup_original_media: false
-  backup_directory: "/path/to/cold/storage/backup"
+  backup_directory: ""              # blank = <config dir>/backups (writable). Set a path only if you keep media backups elsewhere.
   allow_automated_archival: false
 
 security:

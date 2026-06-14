@@ -162,7 +162,7 @@ integrations:
 safety:
   dry_run: true                # Default safety mode
   backup_original_media: false
-  backup_directory: "/path/to/cold/storage/backup"
+  backup_directory: ""              # blank = <config dir>/backups; set a path only if you keep media backups elsewhere
 ```
 
 > **Library names are per-server and must match each server's actual library names.** Plex, Jellyfin, and Emby name their TV library differently by default — Plex uses `TV Shows`, while Jellyfin uses `Shows`. Set each server's `libraries` to what that server actually calls them. If a name doesn't match, MediaSpektor logs the available names for that server (e.g. `jellyfin: library 'TV Shows' not found. Available: Movies, Shows, ...`) so you can correct it. Matching is case-insensitive.

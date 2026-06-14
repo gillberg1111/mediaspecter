@@ -5,6 +5,11 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.0.2] - 2026-06-13
+
+### Fixed
+- **Container crash on startup** when the backup directory was the seeded placeholder (`/path/to/cold/storage/backup`). Running as the unprivileged Unraid user, `mkdir` failed and the fallback (`./backups` under the root-owned `/app`) also failed, so the app never started. The backup directory now treats a blank/placeholder value as "unset" and defaults to a writable `<config dir>/backups` (e.g. `/config/backups`), with the same writable fallback on any error. `config.yaml.example` now ships a blank `backup_directory`.
+
 ## [v1.0.1] - 2026-06-13
 
 ### Fixed
