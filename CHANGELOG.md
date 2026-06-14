@@ -5,6 +5,11 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.7] - 2026-06-14
+
+### Changed
+- The dummy placeholder videos (`.mp4`/`.mkv`/`.avi`) are now ~10 seconds long instead of 2 — the previous clip was too short to read the on-screen "This title was archived…" message before playback ended. Same branding/frame, longer hold.
+
 ## [v1.2.6] - 2026-06-14
 
 ### Security
