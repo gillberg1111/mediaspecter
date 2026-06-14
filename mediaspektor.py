@@ -2690,6 +2690,13 @@ app = FastAPI(title="MediaSpektor", description="Modern self-hosted watch state 
 # Authentication session memory
 VALID_SESSIONS: set[str] = set()
 
+def _invalidate_other_sessions(keep: str | None = None) -> None:
+    """Drop every active session except `keep` (the caller's), so a credential
+    change immediately logs out anyone else holding a live cookie."""
+    VALID_SESSIONS.clear()
+    if keep:
+        VALID_SESSIONS.add(keep)
+
 def verify_auth(request: Request):
     spektor = get_spektor()
     security_config = spektor.config.get("security", {})
@@ -2726,6 +2733,17 @@ class LoginReq(BaseModel):
     username: str
     password: str
 
+def _cookie_secure(security_config: dict) -> bool:
+    """Whether the session cookie should carry the Secure flag.
+
+    Driven by an explicit config flag, NOT the request scheme. With a reverse
+    proxy in front, X-Forwarded-Proto is attacker-spoofable, so deriving Secure
+    from request.url.scheme could be tricked off. Operators serving over HTTPS
+    set security.https_only: true.
+    """
+    return bool(security_config.get("https_only", False))
+
+
 @app.post("/api/login")
 def api_login(req: LoginReq, request: Request, response: Response):
     spektor = get_spektor()
@@ -2747,7 +2765,7 @@ def api_login(req: LoginReq, request: Request, response: Response):
             value=session_id,
             httponly=True,
             samesite="lax",
-            secure=request.url.scheme == "https",  # mark Secure when served over HTTPS
+            secure=_cookie_secure(security_config),
             max_age=30 * 24 * 60 * 60  # 30 days
         )
         # Surface whether the default password is still in use so the UI can force a change.
@@ -2772,9 +2790,10 @@ class UpdateConfigReq(BaseModel):
     config: dict
 
 @app.post("/api/config", dependencies=[Depends(verify_auth)])
-def update_config(req: UpdateConfigReq):
+def update_config(req: UpdateConfigReq, request: Request):
     global GLOBAL_SPEKTOR
     try:
+        old_sec = (get_spektor().config or {}).get("security", {}) or {}
         new_cfg = dict(req.config)
         # Never let the settings form silently drop the security block — that would
         # disable authentication. Preserve the existing one if the client omits it.
@@ -2785,6 +2804,15 @@ def update_config(req: UpdateConfigReq):
         with open(CONFIG_PATH, "w") as f:
             yaml.safe_dump(new_cfg, f)
         GLOBAL_SPEKTOR = MediaSpektor(CONFIG_PATH)
+        # If the dashboard credentials changed, revoke every other live session
+        # (keep the caller's) so an old/leaked cookie can't outlive the change.
+        new_sec = new_cfg.get("security", {}) or {}
+        if (
+            old_sec.get("username") != new_sec.get("username")
+            or old_sec.get("password") != new_sec.get("password")
+        ):
+            _invalidate_other_sessions(keep=request.cookies.get("mediaspektor_session"))
+            logger.info("Dashboard credentials changed via config — other sessions invalidated.")
         logger.info("Configuration updated and reloaded successfully.")
         return {"success": True}
     except Exception as exc:
@@ -2797,7 +2825,7 @@ class ChangePasswordReq(BaseModel):
 
 
 @app.post("/api/change-password", dependencies=[Depends(verify_auth)])
-def change_password(req: ChangePasswordReq):
+def change_password(req: ChangePasswordReq, request: Request):
     global GLOBAL_SPEKTOR
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
@@ -2814,7 +2842,10 @@ def change_password(req: ChangePasswordReq):
         with open(CONFIG_PATH, "w") as f:
             yaml.safe_dump(cfg, f)
         GLOBAL_SPEKTOR = MediaSpektor(CONFIG_PATH)
-        logger.info("Dashboard password updated.")
+        # Credentials changed — revoke every other live session, keeping only
+        # the caller's so they stay logged in after the change.
+        _invalidate_other_sessions(keep=request.cookies.get("mediaspektor_session"))
+        logger.info("Dashboard password updated; other sessions invalidated.")
         return {"success": True}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -3079,7 +3110,18 @@ def main() -> None:
     else:
         logger.info("Starting MediaSpektor Self-Hosted Web App...")
         import uvicorn
-        uvicorn.run(app, host=args.host, port=args.port, proxy_headers=True, forwarded_allow_ips="*")
+        # Only trust X-Forwarded-* headers from explicitly configured proxy IPs.
+        # Defaulting to "*" would let any client spoof their scheme/address; an
+        # operator behind a reverse proxy sets security.trusted_proxies to that
+        # proxy's address (a single IP, comma list, or "*" if they accept the risk).
+        trusted = get_spektor().config.get("security", {}).get("trusted_proxies")
+        if trusted:
+            uvicorn.run(
+                app, host=args.host, port=args.port,
+                proxy_headers=True, forwarded_allow_ips=trusted,
+            )
+        else:
+            uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,16 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.6] - 2026-06-14
+
+### Security
+- Session cookie `Secure` flag is now driven by an explicit `security.https_only` config option instead of the request scheme. Behind a reverse proxy, `X-Forwarded-Proto` is attacker-spoofable, so deriving `Secure` from it could be tricked off — the flag now reflects operator intent only.
+- Proxy headers are no longer trusted from every client. `proxy_headers`/`forwarded_allow_ips` are only enabled when `security.trusted_proxies` is set to the proxy's address(es); the previous unconditional `forwarded_allow_ips="*"` let any client spoof its scheme and source address.
+- Changing the dashboard password (`/api/change-password`) or credentials via `/api/config` now revokes all other active sessions, keeping only the caller's — a leaked or stale cookie can no longer outlive a credential change.
+
+### Added
+- `security.https_only` and `security.trusted_proxies` config options (see `config.yaml.example`).
+
 ## [v1.2.5] - 2026-06-14
 
 ### Fixed

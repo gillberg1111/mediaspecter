@@ -648,6 +648,49 @@ class TestAPISecurity(unittest.TestCase):
         import mediaspektor
         self.assertEqual(mediaspektor.GLOBAL_SPEKTOR.config["security"]["password"], "s3cret-pw")
 
+    def test_change_password_invalidates_other_sessions(self):
+        from fastapi.testclient import TestClient
+        from mediaspektor import app
+        # Two independent logged-in clients (two cookie jars / sessions).
+        other = TestClient(app)
+        other.post("/api/login", json={"username": "testuser", "password": "testpassword"})
+        self.assertEqual(other.get("/api/config").status_code, 200)
+
+        self.client.post("/api/login", json={"username": "testuser", "password": "testpassword"})
+        resp = self.client.post("/api/change-password", json={"password": "s3cret-pw"})
+        self.assertEqual(resp.status_code, 200)
+
+        # The other session must now be revoked, but the caller stays logged in.
+        self.assertEqual(other.get("/api/config").status_code, 401)
+        self.assertEqual(self.client.get("/api/config").status_code, 200)
+
+    def test_config_credential_change_invalidates_other_sessions(self):
+        from fastapi.testclient import TestClient
+        from mediaspektor import app
+        other = TestClient(app)
+        other.post("/api/login", json={"username": "testuser", "password": "testpassword"})
+        self.assertEqual(other.get("/api/config").status_code, 200)
+
+        self.client.post("/api/login", json={"username": "testuser", "password": "testpassword"})
+        new_cfg = {
+            "servers": [], "rules": {}, "safety": {},
+            "security": {"enabled": True, "username": "testuser", "password": "rotated-pw"},
+        }
+        resp = self.client.post("/api/config", json={"config": new_cfg})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(other.get("/api/config").status_code, 401)
+        self.assertEqual(self.client.get("/api/config").status_code, 200)
+
+    def test_login_cookie_secure_follows_https_only(self):
+        # Default (https_only unset) → cookie is not marked Secure.
+        resp = self.client.post("/api/login", json={"username": "testuser", "password": "testpassword"})
+        self.assertNotIn("secure", resp.headers.get("set-cookie", "").lower())
+
+        # https_only: true → Secure flag is set.
+        self.spektor.config["security"]["https_only"] = True
+        resp = self.client.post("/api/login", json={"username": "testuser", "password": "testpassword"})
+        self.assertIn("secure", resp.headers.get("set-cookie", "").lower())
+
     def test_update_config_preserves_security(self):
         self.client.post("/api/login", json={"username": "testuser", "password": "testpassword"})
         # The settings form posts a config without a security block — auth must survive.

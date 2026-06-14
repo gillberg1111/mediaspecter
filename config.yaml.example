@@ -59,3 +59,5 @@ security:
   enabled: true
   username: "admin"
   password: "admin"
+  https_only: false                 # true if you serve the dashboard over HTTPS — marks the session cookie Secure
+  trusted_proxies: ""               # blank = ignore proxy headers. Behind a reverse proxy, set its IP (or comma list) to trust X-Forwarded-* — do NOT use "*" on an untrusted network
