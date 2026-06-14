@@ -2351,32 +2351,14 @@ class MediaSpektor:
                 results["error"] = "Original poster backup not found."
                 return results
 
-            # Need to find siblings. Since it's archived, we try to use the source server.
-            source_server = None
-            for s in self.servers:
-                if s.server_type == server_type:
-                    source_server = s
-                    break
-
-            if not source_server:
-                results["error"] = f"Source server {server_type} not available."
-                return results
-
-            source_item = source_server.get_item_details(item_id)
-            if not source_item:
-                results["error"] = "Could not fetch item details from source server."
-                return results
-
-            expanded_ids = self._expand_external_ids(media_type, source_item.get("external_ids", {}))
-            siblings = self._find_item_across_servers(media_type, title, expanded_ids)
-            
-            # Ensure the source item is in the siblings list
-            if not any(s["server_type"] == server_type for s in siblings):
-                siblings.append({
+            # Find siblings in the database that are currently archived at the same path
+            siblings = self.db.get_items_by_path(db_item.get("original_path"), status="archived")
+            if not siblings:
+                siblings = [{
                     "server_type": server_type,
                     "server_item_id": item_id,
                     "title": title
-                })
+                }]
 
             success_count = 0
             for sib in siblings:

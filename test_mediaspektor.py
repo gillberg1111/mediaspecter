@@ -546,6 +546,16 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(resp.headers["Cache-Control"], "public, max-age=86400")
         self.mock_connector._server.fetchItem.assert_called_with(1)
 
+    def test_trigger_regenerate_endpoint(self):
+        resp = self.client.post("/api/regenerate", json={
+            "server_type": "plex",
+            "item_id": "1",
+            "target": "poster"
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["success"])
+
+
 
 class TestAPISecurity(unittest.TestCase):
     def setUp(self):
@@ -976,6 +986,130 @@ class TestBackupDirFallback(unittest.TestCase):
             spektor = MediaSpektor(cfg)
             self.assertEqual(str(spektor.backup_dir), os.path.join(d, "backups"))
             self.assertTrue(os.path.isdir(spektor.backup_dir))
+
+
+class TestRegenerate(unittest.TestCase):
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self.temp_config = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False)
+        self.temp_config.close()
+        
+        self.config_data = {
+            "servers": [
+                {
+                    "type": "plex",
+                    "enabled": True,
+                    "url": "http://mock-plex",
+                    "token": "mock-token",
+                    "libraries": ["Movies"]
+                }
+            ],
+            "rules": {
+                "min_age_days": 7,
+                "exclude_labels": [],
+                "exclude_genres": [],
+                "dummy_threshold_mb": 15
+            },
+            "safety": {
+                "dry_run": True,
+                "backup_original_media": False,
+                "backup_directory": "./backups"
+            }
+        }
+        
+        import yaml
+        with open(self.temp_config.name, "w") as f:
+            yaml.safe_dump(self.config_data, f)
+            
+        self.spektor = MediaSpektor(self.temp_config.name)
+        self.spektor.db = Database(self.temp_db.name)
+        
+        self.mock_connector = MagicMock()
+        self.mock_connector.server_type = "plex"
+        self.spektor.servers = [self.mock_connector]
+
+    def tearDown(self):
+        if os.path.exists(self.temp_db.name):
+            os.unlink(self.temp_db.name)
+        if os.path.exists(self.temp_config.name):
+            os.unlink(self.temp_config.name)
+
+    def test_regenerate_item_not_found(self):
+        res = self.spektor.regenerate_item("plex", "99999", "poster")
+        self.assertFalse(res["success"])
+        self.assertEqual(res["error"], "Item not found in database.")
+
+    def test_regenerate_poster_backup_missing(self):
+        self.spektor.db.insert(
+            server_type="plex",
+            server_item_id="12345",
+            title="Test Movie",
+            media_type="movie",
+            original_path="/path/to/movie.mkv",
+            original_size_bytes=10 * 1024 * 1024 * 1024,
+            dummy_size_bytes=2048,
+            backup_poster_path="/nonexistent/poster.jpg",
+            backup_media_path=None,
+            status="archived"
+        )
+        res = self.spektor.regenerate_item("plex", "12345", "poster")
+        self.assertFalse(res["success"])
+        self.assertEqual(res["error"], "Original poster backup not found.")
+
+    def test_regenerate_poster_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            poster_backup = os.path.join(d, "plex_12345_poster_original.jpg")
+            with open(poster_backup, "wb") as f:
+                f.write(b"fake image data")
+            
+            self.spektor.db.insert(
+                server_type="plex",
+                server_item_id="12345",
+                title="Test Movie",
+                media_type="movie",
+                original_path="/path/to/movie.mkv",
+                original_size_bytes=10 * 1024 * 1024 * 1024,
+                dummy_size_bytes=2048,
+                backup_poster_path=poster_backup,
+                backup_media_path=None,
+                status="archived"
+            )
+            
+            self.spektor.overlay.apply_overlay = MagicMock(return_value=True)
+            self.mock_connector.upload_poster.return_value = True
+            
+            res = self.spektor.regenerate_item("plex", "12345", "poster")
+            self.assertTrue(res["success"])
+            self.spektor.overlay.apply_overlay.assert_called_once()
+            self.mock_connector.upload_poster.assert_called_once()
+            self.assertIn("Regenerated poster for plex", res["messages"])
+
+    def test_regenerate_video_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            movie_path = os.path.join(d, "movie.mkv")
+            with open(movie_path, "wb") as f:
+                f.write(b"original large movie data")
+            
+            self.spektor.db.insert(
+                server_type="plex",
+                server_item_id="12345",
+                title="Test Movie",
+                media_type="movie",
+                original_path=movie_path,
+                original_size_bytes=10 * 1024 * 1024 * 1024,
+                dummy_size_bytes=2048,
+                backup_poster_path=None,
+                backup_media_path=None,
+                status="archived"
+            )
+            
+            res = self.spektor.regenerate_item("plex", "12345", "video")
+            self.assertTrue(res["success"])
+            self.assertIn("Dummy video regenerated and permissions applied.", res["messages"])
+            with open(movie_path, "rb") as f:
+                content = f.read()
+            self.assertNotEqual(content, b"original large movie data")
 
 
 if __name__ == "__main__":

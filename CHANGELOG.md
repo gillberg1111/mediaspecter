@@ -5,6 +5,16 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.4] - 2026-06-14
+
+### Fixed
+- Fixed backend `AttributeError` crash during the "Fix Poster" procedure caused by hallucinated API methods `get_item_details` and `_find_item_across_servers`. Sibling item identification is now performed using direct database queries.
+
+## [v1.2.3] - 2026-06-14
+
+### Fixed
+- Removed a local diagnostic script (`test_regen.py`) that was accidentally committed in `v1.2.2` and was causing the GitHub Actions CI pipeline to crash during the `unittest discover` step.
+
 ## [v1.2.2] - 2026-06-14
 
 ### Fixed
