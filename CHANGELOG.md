@@ -5,6 +5,17 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.8] - 2026-06-14
+
+### Fixed
+- **Jellyfin & Emby poster uploads returned HTTP 500.** Their `POST /Items/{id}/Images/Primary` endpoint expects the image body **Base64-encoded** (the `Content-Type` header carries the real MIME type); we were sending raw bytes. Affected both archival and "Fix Poster" regeneration — Plex was unaffected.
+- **Activity log showed every line twice.** The in-memory log handler was attached to both the `mediaspektor` logger and the root logger it propagates to, capturing each record twice. Now attached to root only.
+
+### Changed
+- Poster overlay now draws a mint **border frame** around the whole poster (not just the banner's top edge), so the archived state reads at a glance.
+- The badge shows just **`ARCHIVED`** (no "• 0.0 GB SAVED") when the saved figure is zero/unknown — which is what regenerating a poster produced when a row's stored size was stale.
+- "Fix Poster" regeneration re-applies the real saved amount: it now uses the largest saving recorded across all of that title's per-server rows, rather than blindly trusting the clicked server's row.
+
 ## [v1.2.7] - 2026-06-14
 
 ### Changed

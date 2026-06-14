@@ -1231,5 +1231,45 @@ class TestRegenerate(unittest.TestCase):
             self.assertTrue(os.path.getsize(movie_path) > 50 * 1024 * 1024)
 
 
+class TestPosterUploadEncoding(unittest.TestCase):
+    """Jellyfin/Emby expect the image body Base64-encoded; raw bytes -> HTTP 500."""
+
+    def _write_poster(self, d):
+        p = os.path.join(d, "overlay.jpg")
+        with open(p, "wb") as f:
+            f.write(b"\xff\xd8\xff\xe0 fake jpeg bytes \x00\x01\x02")
+        return p
+
+    def test_jellyfin_uploads_base64_body(self):
+        import mediaspektor
+        with patch.object(mediaspektor.JellyfinConnector, "authenticate"):
+            jf = mediaspektor.JellyfinConnector(
+                {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
+            )
+        jf.api_key = "key"
+        with tempfile.TemporaryDirectory() as d:
+            poster = self._write_poster(d)
+            raw = open(poster, "rb").read()
+            with patch.object(jf, "_request") as mock_req:
+                self.assertTrue(jf.upload_poster("itm", poster))
+            sent = mock_req.call_args.kwargs["data"]
+            self.assertEqual(sent, base64.b64encode(raw))
+            self.assertEqual(mock_req.call_args.kwargs["req_headers"]["Content-Type"], "image/jpeg")
+
+    def test_emby_uploads_base64_body(self):
+        import mediaspektor
+        with patch.object(mediaspektor.EmbyConnector, "_resolve_user_id"):
+            emby = mediaspektor.EmbyConnector(
+                {"type": "emby", "url": "http://emby", "api_key": "k", "user_id": "uid"}
+            )
+        with tempfile.TemporaryDirectory() as d:
+            poster = self._write_poster(d)
+            raw = open(poster, "rb").read()
+            with patch("mediaspektor.requests.post") as mock_post:
+                mock_post.return_value = MagicMock(raise_for_status=lambda: None)
+                self.assertTrue(emby.upload_poster("itm", poster))
+            self.assertEqual(mock_post.call_args.kwargs["data"], base64.b64encode(raw))
+
+
 if __name__ == "__main__":
     unittest.main()

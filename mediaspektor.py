@@ -1110,14 +1110,18 @@ class JellyfinConnector(BaseMediaServer):
 
     def upload_poster(self, item_id: str, source_path: str) -> bool:
         try:
+            # Jellyfin's POST /Items/{id}/Images/Primary expects the body to be the
+            # image bytes Base64-ENCODED (not raw binary); the Content-Type header
+            # carries the real image MIME type. Sending raw bytes returns HTTP 500.
             with open(source_path, "rb") as f:
-                self._request(
-                    "POST",
-                    f"Items/{item_id}/Images/Primary",
-                    data=f.read(),
-                    params={"X-Emby-Client": "MediaSpektor"},
-                    req_headers={"Content-Type": "image/jpeg"},
-                )
+                payload = base64.b64encode(f.read())
+            self._request(
+                "POST",
+                f"Items/{item_id}/Images/Primary",
+                data=payload,
+                params={"X-Emby-Client": "MediaSpektor"},
+                req_headers={"Content-Type": "image/jpeg"},
+            )
             return True
         except Exception as exc:
             logger.error("Jellyfin: upload poster failed for %s: %s", item_id, exc)
@@ -1485,16 +1489,19 @@ class EmbyConnector(BaseMediaServer):
             url = urljoin(
                 self.base_url + "/", f"Items/{item_id}/Images/Primary"
             )
+            # Emby (like Jellyfin) expects the image body Base64-ENCODED, with the
+            # Content-Type header set to the real image MIME type. Raw bytes -> HTTP 500.
             with open(source_path, "rb") as f:
-                upload_headers = self.headers.copy()
-                upload_headers["Content-Type"] = "image/jpeg"
-                resp = requests.post(
-                    url,
-                    headers=upload_headers,
-                    data=f.read(),
-                    params={"X-Emby-Client": "MediaSpektor"},
-                    timeout=30,
-                )
+                payload = base64.b64encode(f.read())
+            upload_headers = self.headers.copy()
+            upload_headers["Content-Type"] = "image/jpeg"
+            resp = requests.post(
+                url,
+                headers=upload_headers,
+                data=payload,
+                params={"X-Emby-Client": "MediaSpektor"},
+                timeout=30,
+            )
             resp.raise_for_status()
             return True
         except Exception as exc:
@@ -1892,12 +1899,24 @@ class PosterOverlay:
             overlay = Image.new("RGBA", (width, banner_height), self.banner_color)
             img.paste(overlay, (0, y_start), overlay)
 
-            # Draw 1px border at top of banner
-            for x in range(width):
-                img.putpixel((x, y_start), self.border_color)
+            # Accent line across the top of the banner.
+            draw.line([(0, y_start), (width, y_start)], fill=self.border_color, width=1)
 
-            # Text
-            text = f"ARCHIVED \u2022 {gb_saved:.1f} GB SAVED"
+            # Mint frame around the whole poster so the archived state reads at a glance.
+            border_w = max(2, round(width / 220))
+            draw.rectangle(
+                [(0, 0), (width - 1, height - 1)],
+                outline=self.border_color,
+                width=border_w,
+            )
+
+            # Text \u2014 only show the saved figure when it's meaningful. Regenerating a
+            # poster recomputes from the DB and can land at 0.0 GB, which looks broken;
+            # in that case just say ARCHIVED.
+            if gb_saved is not None and gb_saved >= 0.05:
+                text = f"ARCHIVED \u2022 {gb_saved:.1f} GB SAVED"
+            else:
+                text = "ARCHIVED"
             font_size = int(height * self.font_size_ratio)
             try:
                 font = ImageFont.truetype(self.font_name, font_size)
@@ -2360,6 +2379,15 @@ class MediaSpektor:
                     "title": title
                 }]
 
+            # Re-apply the real saved amount: use the largest saving recorded across
+            # all of this movie's rows. The clicked server's row can hold a stale/zero
+            # original size while a sibling kept the true value — prefer the real one.
+            for sib in siblings:
+                sib_saved = max(0, sib.get("original_size_bytes", 0) - sib.get("dummy_size_bytes", 0))
+                if sib_saved > (original_size - dummy_size):
+                    original_size, dummy_size = sib.get("original_size_bytes", 0), sib.get("dummy_size_bytes", 0)
+            gb_saved = max(0, original_size - dummy_size) / (1024 ** 3)
+
             success_count = 0
             for sib in siblings:
                 srv_type = sib["server_type"]
@@ -2675,7 +2703,9 @@ class MemoryLogHandler(logging.Handler):
 memory_log_handler = MemoryLogHandler()
 memory_log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
 memory_log_handler.setLevel(logging.INFO)
-logging.getLogger("mediaspektor").addHandler(memory_log_handler)
+# Attach only to the root logger. The "mediaspektor" logger propagates to root,
+# so adding the same handler to both captured every record twice (doubled lines
+# in the dashboard activity log). Root alone captures mediaspektor + libraries once.
 logging.getLogger().addHandler(memory_log_handler)
 
 # Initialize FastAPI App
