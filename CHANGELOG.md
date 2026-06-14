@@ -5,6 +5,11 @@ All notable changes to **MediaSpektor** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v1.2.1] - 2026-06-14
+
+### Fixed
+- Fixed a bug where the `Fix Poster` and `Fix Video` buttons in the confirmation modal were missing their click handlers and doing nothing when clicked.
+
 ## [v1.2.0] - 2026-06-13
 
 ### Added
