@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for MediaSpektor."""
+"""Unit tests for MediaSpecter."""
 
 import unittest
 from unittest.mock import MagicMock, patch
@@ -12,11 +12,11 @@ from io import BytesIO
 from PIL import Image
 
 # Import the code to test
-from mediaspektor import (
+from mediaspecter import (
     _parse_iso_date,
     Database,
     PosterOverlay,
-    MediaSpektor,
+    MediaSpecter,
     RadarrClient,
     SonarrClient
 )
@@ -145,7 +145,7 @@ class TestPosterOverlay(unittest.TestCase):
 
 
 class TestOrchestratorFilter(unittest.TestCase):
-    @patch("mediaspektor.Database")
+    @patch("mediaspecter.Database")
     def setUp(self, mock_db):
         # Setup mock config
         self.config = {
@@ -169,7 +169,7 @@ class TestOrchestratorFilter(unittest.TestCase):
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump(self.config, f)
 
-        self.spektor = MediaSpektor(self.temp_config.name)
+        self.specter = MediaSpecter(self.temp_config.name)
 
     def tearDown(self):
         if os.path.exists(self.temp_config.name):
@@ -237,7 +237,7 @@ class TestOrchestratorFilter(unittest.TestCase):
             }
         ]
 
-        filtered = self.spektor._filter_items(items)
+        filtered = self.specter._filter_items(items)
         
         # Only the first item should pass all rules
         self.assertEqual(len(filtered), 1)
@@ -253,7 +253,7 @@ class TestOrchestratorArchiveSafety(unittest.TestCase):
         if os.path.exists(self.temp_config.name):
             os.unlink(self.temp_config.name)
 
-    @patch("mediaspektor.Database")
+    @patch("mediaspecter.Database")
     def test_archive_downgrades_to_dry_run_when_allow_auto_is_false(self, mock_db):
         config_data = {
             "servers": [],
@@ -267,8 +267,8 @@ class TestOrchestratorArchiveSafety(unittest.TestCase):
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump(config_data, f)
             
-        spektor = MediaSpektor(self.temp_config.name)
-        spektor.db.item_exists.return_value = False
+        specter = MediaSpecter(self.temp_config.name)
+        specter.db.item_exists.return_value = False
         
         mock_server = MagicMock()
         mock_server.server_type = "plex"
@@ -284,11 +284,11 @@ class TestOrchestratorArchiveSafety(unittest.TestCase):
             "labels": []
         }]
         
-        spektor.servers = [mock_server]
+        specter.servers = [mock_server]
         
         with patch("os.path.exists", return_value=True), \
              patch("os.path.splitext", return_value=("/path/movie", ".mp4")):
-            results = spektor.archive(dry_run=False)
+            results = specter.archive(dry_run=False)
             self.assertIn("Test Movie", results["archived"])
             self.assertEqual(mock_server.download_poster.call_count, 0)
 
@@ -390,7 +390,7 @@ class TestIntegrations(unittest.TestCase):
 
 class TestFastAPI(unittest.TestCase):
     def setUp(self):
-        # We can construct a mock MediaSpektor or a test MediaSpektor
+        # We can construct a mock MediaSpecter or a test MediaSpecter
         # with a temp config and database.
         self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.temp_db.close()
@@ -424,14 +424,14 @@ class TestFastAPI(unittest.TestCase):
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump(self.config_data, f)
             
-        # Temporarily mock CONFIG_PATH and GLOBAL_SPEKTOR
-        import mediaspektor
-        self.old_config_path = mediaspektor.CONFIG_PATH
-        self.old_global_spektor = mediaspektor.GLOBAL_SPEKTOR
-        mediaspektor.CONFIG_PATH = self.temp_config.name
+        # Temporarily mock CONFIG_PATH and GLOBAL_SPECTER
+        import mediaspecter
+        self.old_config_path = mediaspecter.CONFIG_PATH
+        self.old_global_specter = mediaspecter.GLOBAL_SPECTER
+        mediaspecter.CONFIG_PATH = self.temp_config.name
         
         # Patch the connectors so we don't try connecting to live server
-        # when initializing MediaSpektor
+        # when initializing MediaSpecter
         self.mock_connector = MagicMock()
         self.mock_connector.server_type = "plex"
         self.mock_connector.get_movies.return_value = [
@@ -466,20 +466,20 @@ class TestFastAPI(unittest.TestCase):
             }
         ]
         
-        # Instantiate MediaSpektor and override components
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
-        self.spektor.servers = [self.mock_connector]
+        # Instantiate MediaSpecter and override components
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
+        self.specter.servers = [self.mock_connector]
         
-        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        mediaspecter.GLOBAL_SPECTER = self.specter
         from fastapi.testclient import TestClient
-        from mediaspektor import app
+        from mediaspecter import app
         self.client = TestClient(app)
 
     def tearDown(self):
-        import mediaspektor
-        mediaspektor.CONFIG_PATH = self.old_config_path
-        mediaspektor.GLOBAL_SPEKTOR = self.old_global_spektor
+        import mediaspecter
+        mediaspecter.CONFIG_PATH = self.old_config_path
+        mediaspecter.GLOBAL_SPECTER = self.old_global_specter
         
         if os.path.exists(self.temp_db.name):
             os.unlink(self.temp_db.name)
@@ -489,7 +489,7 @@ class TestFastAPI(unittest.TestCase):
     def test_read_root(self):
         resp = self.client.get("/")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("MediaSpektor", resp.text)
+        self.assertIn("MediaSpecter", resp.text)
 
     def test_get_config(self):
         resp = self.client.get("/api/config")
@@ -504,9 +504,9 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {"success": True})
         
-        import mediaspektor
-        # Verify it reloaded on GLOBAL_SPEKTOR
-        self.assertEqual(mediaspektor.GLOBAL_SPEKTOR.config["rules"]["min_age_days"], 14)
+        import mediaspecter
+        # Verify it reloaded on GLOBAL_SPECTER
+        self.assertEqual(mediaspecter.GLOBAL_SPECTER.config["rules"]["min_age_days"], 14)
 
     def test_get_stats(self):
         resp = self.client.get("/api/stats")
@@ -549,20 +549,20 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(data[0]["status"], "original")
 
     def test_trigger_actions(self):
-        with patch.object(self.spektor, "archive_item") as mock_archive:
-            resp = self.client.post("/api/spektor", json={"server_type": "plex", "item_id": "1"})
+        with patch.object(self.specter, "archive_item") as mock_archive:
+            resp = self.client.post("/api/specter", json={"server_type": "plex", "item_id": "1"})
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["success"], True)
             
-        with patch.object(self.spektor, "restore") as mock_restore:
+        with patch.object(self.specter, "restore") as mock_restore:
             resp = self.client.post("/api/restore", json={"server_type": "plex", "item_id": "1"})
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["success"], True)
 
-    def test_trigger_spektor_accepts_numeric_item_id(self):
+    def test_trigger_specter_accepts_numeric_item_id(self):
         # Plex ratingKeys arrive as JSON numbers; must not 422 (regression).
-        with patch.object(self.spektor, "archive_item") as mock_archive:
-            resp = self.client.post("/api/spektor", json={"server_type": "plex", "item_id": 12345})
+        with patch.object(self.specter, "archive_item") as mock_archive:
+            resp = self.client.post("/api/specter", json={"server_type": "plex", "item_id": 12345})
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["success"], True)
 
@@ -577,7 +577,7 @@ class TestFastAPI(unittest.TestCase):
         fake_resp.headers = {"Content-Type": "image/jpeg"}
 
         # Poster proxy now uses the pooled HTTP session and reads the body fully.
-        with patch("mediaspektor.HTTP.get", return_value=fake_resp):
+        with patch("mediaspecter.HTTP.get", return_value=fake_resp):
             resp = self.client.get("/api/posterproxy?server_type=plex&item_id=1")
 
         self.assertEqual(resp.status_code, 200)
@@ -598,9 +598,9 @@ class TestFastAPI(unittest.TestCase):
 
 class TestAPISecurity(unittest.TestCase):
     def setUp(self):
-        import mediaspektor
-        self.old_config_path = mediaspektor.CONFIG_PATH
-        self.old_global_spektor = mediaspektor.GLOBAL_SPEKTOR
+        import mediaspecter
+        self.old_config_path = mediaspecter.CONFIG_PATH
+        self.old_global_specter = mediaspecter.GLOBAL_SPECTER
         
         self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.temp_db.close()
@@ -622,19 +622,19 @@ class TestAPISecurity(unittest.TestCase):
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump(self.config_data, f)
             
-        mediaspektor.CONFIG_PATH = self.temp_config.name
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
-        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        mediaspecter.CONFIG_PATH = self.temp_config.name
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
+        mediaspecter.GLOBAL_SPECTER = self.specter
         
         from fastapi.testclient import TestClient
-        from mediaspektor import app
+        from mediaspecter import app
         self.client = TestClient(app)
 
     def tearDown(self):
-        import mediaspektor
-        mediaspektor.CONFIG_PATH = self.old_config_path
-        mediaspektor.GLOBAL_SPEKTOR = self.old_global_spektor
+        import mediaspecter
+        mediaspecter.CONFIG_PATH = self.old_config_path
+        mediaspecter.GLOBAL_SPECTER = self.old_global_specter
         if os.path.exists(self.temp_db.name):
             os.unlink(self.temp_db.name)
         if os.path.exists(self.temp_config.name):
@@ -671,7 +671,7 @@ class TestAPISecurity(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_login_flags_default_password(self):
-        self.spektor.config["security"]["password"] = "admin"
+        self.specter.config["security"]["password"] = "admin"
         resp = self.client.post("/api/login", json={"username": "testuser", "password": "admin"})
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json().get("must_change_password"))
@@ -684,12 +684,12 @@ class TestAPISecurity(unittest.TestCase):
         # accepts a strong one and persists it
         resp = self.client.post("/api/change-password", json={"password": "s3cret-pw"})
         self.assertEqual(resp.status_code, 200)
-        import mediaspektor
-        self.assertEqual(mediaspektor.GLOBAL_SPEKTOR.config["security"]["password"], "s3cret-pw")
+        import mediaspecter
+        self.assertEqual(mediaspecter.GLOBAL_SPECTER.config["security"]["password"], "s3cret-pw")
 
     def test_change_password_invalidates_other_sessions(self):
         from fastapi.testclient import TestClient
-        from mediaspektor import app
+        from mediaspecter import app
         # Two independent logged-in clients (two cookie jars / sessions).
         other = TestClient(app)
         other.post("/api/login", json={"username": "testuser", "password": "testpassword"})
@@ -705,7 +705,7 @@ class TestAPISecurity(unittest.TestCase):
 
     def test_config_credential_change_invalidates_other_sessions(self):
         from fastapi.testclient import TestClient
-        from mediaspektor import app
+        from mediaspecter import app
         other = TestClient(app)
         other.post("/api/login", json={"username": "testuser", "password": "testpassword"})
         self.assertEqual(other.get("/api/config").status_code, 200)
@@ -726,7 +726,7 @@ class TestAPISecurity(unittest.TestCase):
         self.assertNotIn("secure", resp.headers.get("set-cookie", "").lower())
 
         # https_only: true → Secure flag is set.
-        self.spektor.config["security"]["https_only"] = True
+        self.specter.config["security"]["https_only"] = True
         resp = self.client.post("/api/login", json={"username": "testuser", "password": "testpassword"})
         self.assertIn("secure", resp.headers.get("set-cookie", "").lower())
 
@@ -735,9 +735,9 @@ class TestAPISecurity(unittest.TestCase):
         # The settings form posts a config without a security block — auth must survive.
         resp = self.client.post("/api/config", json={"config": {"servers": [], "rules": {}, "safety": {}}})
         self.assertEqual(resp.status_code, 200)
-        import mediaspektor
-        self.assertIn("security", mediaspektor.GLOBAL_SPEKTOR.config)
-        self.assertTrue(mediaspektor.GLOBAL_SPEKTOR.config["security"].get("enabled"))
+        import mediaspecter
+        self.assertIn("security", mediaspecter.GLOBAL_SPECTER.config)
+        self.assertTrue(mediaspecter.GLOBAL_SPECTER.config["security"].get("enabled"))
 
     def test_logout(self):
         # Login first
@@ -783,31 +783,31 @@ class TestPropagation(unittest.TestCase):
         if os.path.exists(self.temp_config.name):
             os.unlink(self.temp_config.name)
 
-    def _make_spektor(self):
-        from mediaspektor import MediaSpektor
+    def _make_specter(self):
+        from mediaspecter import MediaSpecter
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump(self.config_data, f)
-        spektor = MediaSpektor(self.temp_config.name)
-        spektor.db = Database(self.temp_db.name)
-        return spektor
+        specter = MediaSpecter(self.temp_config.name)
+        specter.db = Database(self.temp_db.name)
+        return specter
 
-    def _make_spektor_with_mock_servers(self, *servers):
+    def _make_specter_with_mock_servers(self, *servers):
         """Create spktor and replace servers with mock list."""
-        spektor = self._make_spektor()
-        spektor.servers = list(servers)
-        return spektor
+        specter = self._make_specter()
+        specter.servers = list(servers)
+        return specter
 
-    @patch("mediaspektor.PlexServer")
-    @patch("mediaspektor.JellyfinConnector.authenticate")
+    @patch("mediaspecter.PlexServer")
+    @patch("mediaspecter.JellyfinConnector.authenticate")
     def test_find_item_path_then_id(self, mock_jf_auth, mock_plex_server_cls):
         # Build Plex connector with mocked section/search
         mock_plex = MagicMock()
         mock_plex_server_cls.return_value = mock_plex
 
-        import mediaspektor
+        import mediaspecter
         plex_cfg = {"type": "plex", "enabled": True, "url": "http://mock-plex", "token": "t", "libraries": ["Movies"]}
-        plex = mediaspektor.PlexConnector(plex_cfg)
+        plex = mediaspecter.PlexConnector(plex_cfg)
 
         match_item = MagicMock()
         match_item.ratingKey = 777
@@ -852,8 +852,8 @@ class TestPropagation(unittest.TestCase):
         result3 = plex.find_item("/data/nonexistent.mkv", {}, "episode")
         self.assertIsNone(result3)
 
-    @patch("mediaspektor.JellyfinConnector.authenticate")
-    @patch("mediaspektor.PlexServer")
+    @patch("mediaspecter.JellyfinConnector.authenticate")
+    @patch("mediaspecter.PlexServer")
     def test_archive_item_propagates_to_all_servers(self, mock_plex_cls, mock_jf_auth):
         plex_item = {
             "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
@@ -882,14 +882,14 @@ class TestPropagation(unittest.TestCase):
         jf.upload_poster.return_value = True
         jf.trigger_library_scan = MagicMock()
 
-        spektor = self._make_spektor_with_mock_servers(plex, jf)
+        specter = self._make_specter_with_mock_servers(plex, jf)
 
         # The real filesystem swap is covered by TestSafeReplace; here we stub it
         # so propagation logic can run against fake paths.
-        with patch.object(MediaSpektor, "_replace_with_dummy", return_value=None), \
-             patch("mediaspektor.shutil.copy2"), \
+        with patch.object(MediaSpecter, "_replace_with_dummy", return_value=None), \
+             patch("mediaspecter.shutil.copy2"), \
              patch("builtins.open"):
-            result = spektor.archive_item("plex", "1")
+            result = specter.archive_item("plex", "1")
 
         self.assertTrue(result["success"])
         jf.find_item.assert_called()
@@ -897,11 +897,11 @@ class TestPropagation(unittest.TestCase):
         self.assertGreaterEqual(jf.upload_poster.call_count, 1)
         # One physical movie archived across two servers = one counted item
         # (stats dedupe by original_path), though two DB rows exist.
-        self.assertEqual(spektor.db.get_stats()["total_items"], 1)
-        self.assertEqual(len(spektor.db.get_items_by_path("/data/Movie.mp4", status="archived")), 2)
+        self.assertEqual(specter.db.get_stats()["total_items"], 1)
+        self.assertEqual(len(specter.db.get_items_by_path("/data/Movie.mp4", status="archived")), 2)
 
-    @patch("mediaspektor.JellyfinConnector.authenticate")
-    @patch("mediaspektor.PlexServer")
+    @patch("mediaspecter.JellyfinConnector.authenticate")
+    @patch("mediaspecter.PlexServer")
     def test_archive_item_skips_unmatched_server(self, mock_plex_cls, mock_jf_auth):
         plex_item = {
             "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
@@ -922,22 +922,22 @@ class TestPropagation(unittest.TestCase):
         jf.find_item.return_value = None
         jf.trigger_library_scan = MagicMock()
 
-        spektor = self._make_spektor_with_mock_servers(plex, jf)
+        specter = self._make_specter_with_mock_servers(plex, jf)
 
         # The real filesystem swap is covered by TestSafeReplace; here we stub it
         # so propagation logic can run against fake paths.
-        with patch.object(MediaSpektor, "_replace_with_dummy", return_value=None), \
-             patch("mediaspektor.shutil.copy2"), \
+        with patch.object(MediaSpecter, "_replace_with_dummy", return_value=None), \
+             patch("mediaspecter.shutil.copy2"), \
              patch("builtins.open"):
-            result = spektor.archive_item("plex", "1")
+            result = specter.archive_item("plex", "1")
 
         self.assertTrue(result["success"])
         self.assertTrue(any("jellyfin" in str(w).lower() for w in result.get("warnings", [])))
-        self.assertEqual(spektor.db.get_stats()["total_items"], 1)
+        self.assertEqual(specter.db.get_stats()["total_items"], 1)
         jf.upload_poster.assert_not_called()
 
-    @patch("mediaspektor.JellyfinConnector.authenticate")
-    @patch("mediaspektor.PlexServer")
+    @patch("mediaspecter.JellyfinConnector.authenticate")
+    @patch("mediaspecter.PlexServer")
     def test_archive_item_dry_run_does_not_touch_files(self, mock_plex_cls, mock_jf_auth):
         """Dry-Run must block the single-item (UI) archive — no file swap, no DB row."""
         self.config_data["safety"]["dry_run"] = True
@@ -950,27 +950,27 @@ class TestPropagation(unittest.TestCase):
         plex.server_type = "plex"
         plex.get_item_metadata.return_value = plex_item
 
-        spektor = self._make_spektor_with_mock_servers(plex)
+        specter = self._make_specter_with_mock_servers(plex)
 
-        with patch.object(MediaSpektor, "_replace_with_dummy") as mock_swap:
-            result = spektor.archive_item("plex", "1")
+        with patch.object(MediaSpecter, "_replace_with_dummy") as mock_swap:
+            result = specter.archive_item("plex", "1")
 
         self.assertTrue(result["success"])
         self.assertTrue(result.get("dry_run"))
         mock_swap.assert_not_called()
         plex.upload_poster.assert_not_called()
-        self.assertEqual(spektor.db.get_stats()["total_items"], 0)
+        self.assertEqual(specter.db.get_stats()["total_items"], 0)
 
     def test_restore_fans_out(self):
-        spektor = self._make_spektor()
+        specter = self._make_specter()
 
         # Seed two sibling rows
-        spektor.db.insert(
+        specter.db.insert(
             server_type="plex", server_item_id="1", title="Movie", media_type="movie",
             original_path="/data/Movie.mp4", original_size_bytes=100, dummy_size_bytes=10,
             backup_poster_path="/backups/plex_1_poster_original.jpg", status="archived",
         )
-        spektor.db.insert(
+        specter.db.insert(
             server_type="jellyfin", server_item_id="99", title="Movie", media_type="movie",
             original_path="/data/Movie.mp4", original_size_bytes=100, dummy_size_bytes=10,
             backup_poster_path="/backups/jellyfin_99_poster_original.jpg", status="archived",
@@ -986,20 +986,20 @@ class TestPropagation(unittest.TestCase):
         jf.upload_poster.return_value = True
         jf.trigger_library_scan = MagicMock()
 
-        spektor.servers = [plex, jf]
+        specter.servers = [plex, jf]
 
         with patch("os.path.exists", return_value=True), patch("shutil.move"):
-            self.assertTrue(spektor.restore("plex", "1"))
+            self.assertTrue(specter.restore("plex", "1"))
 
         # Both rows restored
-        self.assertEqual(spektor.db.get_item("plex", "1")["status"], "restored")
-        self.assertEqual(spektor.db.get_item("jellyfin", "99")["status"], "restored")
+        self.assertEqual(specter.db.get_item("plex", "1")["status"], "restored")
+        self.assertEqual(specter.db.get_item("jellyfin", "99")["status"], "restored")
         # Upload called for both
         plex.upload_poster.assert_called()
         jf.upload_poster.assert_called()
 
     def test_expand_external_ids_bridges(self):
-        from mediaspektor import TmdbClient
+        from mediaspecter import TmdbClient
 
         tmdb = TmdbClient("fake-key-not-jwt")
 
@@ -1012,38 +1012,38 @@ class TestPropagation(unittest.TestCase):
 
         tmdb._get = fake_get
 
-        spektor = self._make_spektor()
-        spektor.tmdb = tmdb
+        specter = self._make_specter()
+        specter.tmdb = tmdb
 
         # Expand from imdb only
-        result = spektor._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
+        result = specter._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
         self.assertEqual(result["tmdb"], "99")
         self.assertEqual(result["imdb"], "tt123")
         self.assertEqual(result["tvdb"], "2020")
 
         # Episodes return input unchanged
-        ep_result = spektor._expand_external_ids("episode", {"tmdb": None, "imdb": "tt123"})
+        ep_result = specter._expand_external_ids("episode", {"tmdb": None, "imdb": "tt123"})
         self.assertEqual(ep_result["tmdb"], None)
 
         # When disabled, return input unchanged
         tmdb.api_key = ""
-        result3 = spektor._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
+        result3 = specter._expand_external_ids("movie", {"tmdb": None, "imdb": "tt123", "tvdb": None})
         self.assertEqual(result3["tmdb"], None)
 
 
 class TestSafeReplace(unittest.TestCase):
     """Guards the data-safety contract of _replace_with_dummy."""
 
-    def _spektor(self):
+    def _specter(self):
         # Bare instance — _replace_with_dummy needs no config/connectors.
-        return MediaSpektor.__new__(MediaSpektor)
+        return MediaSpecter.__new__(MediaSpecter)
 
     def test_atomic_replace(self):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "movie.mkv")
             with open(f, "wb") as fh:
                 fh.write(b"X" * 1000)
-            out = self._spektor()._replace_with_dummy(f, b"DUMMY")
+            out = self._specter()._replace_with_dummy(f, b"DUMMY")
             self.assertIsNone(out)
             with open(f, "rb") as fh:
                 self.assertEqual(fh.read(), b"DUMMY")
@@ -1054,7 +1054,7 @@ class TestSafeReplace(unittest.TestCase):
             backup = os.path.join(d, "plex_1.mkv")
             with open(f, "wb") as fh:
                 fh.write(b"ORIGINAL")
-            out = self._spektor()._replace_with_dummy(f, b"DUMMY", backup)
+            out = self._specter()._replace_with_dummy(f, b"DUMMY", backup)
             self.assertEqual(out, backup)
             with open(f, "rb") as fh:
                 self.assertEqual(fh.read(), b"DUMMY")
@@ -1065,7 +1065,7 @@ class TestSafeReplace(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             f = os.path.join(d, "does-not-exist.mkv")
             with self.assertRaises(FileNotFoundError):
-                self._spektor()._replace_with_dummy(f, b"DUMMY")
+                self._specter()._replace_with_dummy(f, b"DUMMY")
             self.assertFalse(os.path.exists(f))
             # No stray temp files left behind in the directory
             self.assertEqual(os.listdir(d), [])
@@ -1078,7 +1078,7 @@ class TestSafeReplace(unittest.TestCase):
             with open(f, "wb") as fh:
                 fh.write(b"X" * 100)
             os.chmod(f, 0o644)
-            self._spektor()._replace_with_dummy(f, b"DUMMY")
+            self._specter()._replace_with_dummy(f, b"DUMMY")
             self.assertEqual(os.stat(f).st_mode & 0o777, 0o644)
 
 
@@ -1093,9 +1093,9 @@ class TestBackupDirFallback(unittest.TestCase):
                 yaml.safe_dump(
                     {"servers": [], "safety": {"backup_directory": "/path/to/cold/storage/backup"}}, f
                 )
-            spektor = MediaSpektor(cfg)
-            self.assertEqual(str(spektor.backup_dir), os.path.join(d, "backups"))
-            self.assertTrue(os.path.isdir(spektor.backup_dir))
+            specter = MediaSpecter(cfg)
+            self.assertEqual(str(specter.backup_dir), os.path.join(d, "backups"))
+            self.assertTrue(os.path.isdir(specter.backup_dir))
 
 
 class TestRegenerate(unittest.TestCase):
@@ -1132,12 +1132,12 @@ class TestRegenerate(unittest.TestCase):
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump(self.config_data, f)
             
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
         
         self.mock_connector = MagicMock()
         self.mock_connector.server_type = "plex"
-        self.spektor.servers = [self.mock_connector]
+        self.specter.servers = [self.mock_connector]
 
     def tearDown(self):
         if os.path.exists(self.temp_db.name):
@@ -1146,12 +1146,12 @@ class TestRegenerate(unittest.TestCase):
             os.unlink(self.temp_config.name)
 
     def test_regenerate_item_not_found(self):
-        res = self.spektor.regenerate_item("plex", "99999", "poster")
+        res = self.specter.regenerate_item("plex", "99999", "poster")
         self.assertFalse(res["success"])
         self.assertEqual(res["error"], "Item not found in database.")
 
     def test_regenerate_poster_backup_missing(self):
-        self.spektor.db.insert(
+        self.specter.db.insert(
             server_type="plex",
             server_item_id="12345",
             title="Test Movie",
@@ -1163,7 +1163,7 @@ class TestRegenerate(unittest.TestCase):
             backup_media_path=None,
             status="archived"
         )
-        res = self.spektor.regenerate_item("plex", "12345", "poster")
+        res = self.specter.regenerate_item("plex", "12345", "poster")
         self.assertFalse(res["success"])
         self.assertEqual(res["error"], "Original poster backup not found.")
 
@@ -1173,7 +1173,7 @@ class TestRegenerate(unittest.TestCase):
             with open(poster_backup, "wb") as f:
                 f.write(b"fake image data")
             
-            self.spektor.db.insert(
+            self.specter.db.insert(
                 server_type="plex",
                 server_item_id="12345",
                 title="Test Movie",
@@ -1186,12 +1186,12 @@ class TestRegenerate(unittest.TestCase):
                 status="archived"
             )
             
-            self.spektor.overlay.apply_overlay = MagicMock(return_value=True)
+            self.specter.overlay.apply_overlay = MagicMock(return_value=True)
             self.mock_connector.upload_poster.return_value = True
             
-            res = self.spektor.regenerate_item("plex", "12345", "poster")
+            res = self.specter.regenerate_item("plex", "12345", "poster")
             self.assertTrue(res["success"])
-            self.spektor.overlay.apply_overlay.assert_called_once()
+            self.specter.overlay.apply_overlay.assert_called_once()
             self.mock_connector.upload_poster.assert_called_once()
             self.assertIn("Regenerated poster for plex", res["messages"])
 
@@ -1201,7 +1201,7 @@ class TestRegenerate(unittest.TestCase):
             with open(movie_path, "wb") as f:
                 f.write(b"original large movie data")
             
-            self.spektor.db.insert(
+            self.specter.db.insert(
                 server_type="plex",
                 server_item_id="12345",
                 title="Test Movie",
@@ -1214,7 +1214,7 @@ class TestRegenerate(unittest.TestCase):
                 status="archived"
             )
             
-            res = self.spektor.regenerate_item("plex", "12345", "video")
+            res = self.specter.regenerate_item("plex", "12345", "video")
             self.assertTrue(res["success"])
             self.assertIn("Dummy video regenerated and permissions applied.", res["messages"])
             with open(movie_path, "rb") as f:
@@ -1227,7 +1227,7 @@ class TestRegenerate(unittest.TestCase):
             with open(movie_path, "wb") as f:
                 f.write(b"restored real media")
 
-            self.spektor.db.insert(
+            self.specter.db.insert(
                 server_type="plex",
                 server_item_id="12345",
                 title="Test Movie",
@@ -1240,7 +1240,7 @@ class TestRegenerate(unittest.TestCase):
                 status="restored",
             )
 
-            res = self.spektor.regenerate_item("plex", "12345", "video")
+            res = self.specter.regenerate_item("plex", "12345", "video")
             self.assertFalse(res["success"])
             self.assertIn("not 'archived'", res["error"])
             # File must be untouched.
@@ -1254,7 +1254,7 @@ class TestRegenerate(unittest.TestCase):
                 f.seek(60 * 1024 * 1024)  # 60 MB sparse file > safety ceiling
                 f.write(b"\0")
 
-            self.spektor.db.insert(
+            self.specter.db.insert(
                 server_type="plex",
                 server_item_id="12345",
                 title="Test Movie",
@@ -1267,7 +1267,7 @@ class TestRegenerate(unittest.TestCase):
                 status="archived",
             )
 
-            res = self.spektor.regenerate_item("plex", "12345", "video")
+            res = self.specter.regenerate_item("plex", "12345", "video")
             self.assertFalse(res["success"])
             self.assertIn("real media", res["error"])
             self.assertTrue(os.path.getsize(movie_path) > 50 * 1024 * 1024)
@@ -1283,9 +1283,9 @@ class TestPosterUploadEncoding(unittest.TestCase):
         return p
 
     def test_jellyfin_uploads_base64_body(self):
-        import mediaspektor
-        with patch.object(mediaspektor.JellyfinConnector, "authenticate"):
-            jf = mediaspektor.JellyfinConnector(
+        import mediaspecter
+        with patch.object(mediaspecter.JellyfinConnector, "authenticate"):
+            jf = mediaspecter.JellyfinConnector(
                 {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
             )
         jf.api_key = "key"
@@ -1299,15 +1299,15 @@ class TestPosterUploadEncoding(unittest.TestCase):
             self.assertEqual(mock_req.call_args.kwargs["req_headers"]["Content-Type"], "image/jpeg")
 
     def test_emby_uploads_base64_body(self):
-        import mediaspektor
-        with patch.object(mediaspektor.EmbyConnector, "_resolve_user_id"):
-            emby = mediaspektor.EmbyConnector(
+        import mediaspecter
+        with patch.object(mediaspecter.EmbyConnector, "_resolve_user_id"):
+            emby = mediaspecter.EmbyConnector(
                 {"type": "emby", "url": "http://emby", "api_key": "k", "user_id": "uid"}
             )
         with tempfile.TemporaryDirectory() as d:
             poster = self._write_poster(d)
             raw = open(poster, "rb").read()
-            with patch("mediaspektor.requests.post") as mock_post:
+            with patch("mediaspecter.requests.post") as mock_post:
                 mock_post.return_value = MagicMock(raise_for_status=lambda: None)
                 self.assertTrue(emby.upload_poster("itm", poster))
             self.assertEqual(mock_post.call_args.kwargs["data"], base64.b64encode(raw))
@@ -1358,9 +1358,9 @@ class TestMonitorToggle(unittest.TestCase):
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
-        self.spektor.db.insert(
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
+        self.specter.db.insert(
             server_type="plex", server_item_id="1", title="Movie", media_type="movie",
             original_path="/data/Movie.mkv", original_size_bytes=10**10, dummy_size_bytes=2048,
             backup_poster_path=None, backup_media_path=None, status="archived",
@@ -1372,22 +1372,22 @@ class TestMonitorToggle(unittest.TestCase):
                 os.unlink(p)
 
     def test_set_monitor_requires_radarr(self):
-        self.spektor.radarr = None
-        res = self.spektor.set_item_monitor("plex", "1", True)
+        self.specter.radarr = None
+        res = self.specter.set_item_monitor("plex", "1", True)
         self.assertFalse(res["success"])
         self.assertIn("Radarr", res["error"])
 
     def test_set_monitor_calls_radarr(self):
-        self.spektor.radarr = MagicMock()
-        self.spektor.radarr.set_movie_monitored.return_value = True
-        res = self.spektor.set_item_monitor("plex", "1", True)
+        self.specter.radarr = MagicMock()
+        self.specter.radarr.set_movie_monitored.return_value = True
+        res = self.specter.set_item_monitor("plex", "1", True)
         self.assertTrue(res["success"])
-        self.spektor.radarr.set_movie_monitored.assert_called_once_with("/data/Movie.mkv", True)
+        self.specter.radarr.set_movie_monitored.assert_called_once_with("/data/Movie.mkv", True)
 
     def test_get_monitor_state(self):
-        self.spektor.radarr = MagicMock()
-        self.spektor.radarr.get_movie_monitored.return_value = False
-        res = self.spektor.get_item_monitor("plex", "1")
+        self.specter.radarr = MagicMock()
+        self.specter.radarr.get_movie_monitored.return_value = False
+        res = self.specter.get_item_monitor("plex", "1")
         self.assertTrue(res["available"])
         self.assertFalse(res["monitored"])
 
@@ -1396,9 +1396,9 @@ class TestLibraryScanScoping(unittest.TestCase):
     """Scans should target the changed item's library/type, not the whole server."""
 
     def test_plex_scan_scopes_to_media_type(self):
-        import mediaspektor
-        with patch("mediaspektor.PlexServer"):
-            plex = mediaspektor.PlexConnector(
+        import mediaspecter
+        with patch("mediaspecter.PlexServer"):
+            plex = mediaspecter.PlexConnector(
                 {"type": "plex", "url": "http://p", "token": "t", "libraries": ["Movies", "TV"]}
             )
         movie_sec, tv_sec = MagicMock(), MagicMock()
@@ -1412,9 +1412,9 @@ class TestLibraryScanScoping(unittest.TestCase):
         tv_sec.update.assert_not_called()
 
     def test_jellyfin_scan_refreshes_single_item(self):
-        import mediaspektor
-        with patch.object(mediaspektor.JellyfinConnector, "authenticate"):
-            jf = mediaspektor.JellyfinConnector(
+        import mediaspecter
+        with patch.object(mediaspecter.JellyfinConnector, "authenticate"):
+            jf = mediaspecter.JellyfinConnector(
                 {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
             )
         jf.api_key = "key"
@@ -1426,9 +1426,9 @@ class TestLibraryScanScoping(unittest.TestCase):
         self.assertEqual(mock_req.call_args.kwargs["params"]["ImageRefreshMode"], "None")
 
     def test_jellyfin_scan_falls_back_to_full_when_no_item(self):
-        import mediaspektor
-        with patch.object(mediaspektor.JellyfinConnector, "authenticate"):
-            jf = mediaspektor.JellyfinConnector(
+        import mediaspecter
+        with patch.object(mediaspecter.JellyfinConnector, "authenticate"):
+            jf = mediaspecter.JellyfinConnector(
                 {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
             )
         jf.api_key = "key"
@@ -1446,8 +1446,8 @@ class TestBulkPlan(unittest.TestCase):
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
 
     def tearDown(self):
         for p in (self.temp_db.name, self.temp_config.name):
@@ -1463,10 +1463,10 @@ class TestBulkPlan(unittest.TestCase):
             {"id": "2", "original_size": 200_000_000, "is_watched": False},
             {"id": "3", "original_size": 0, "is_watched": True},
         ]
-        self.spektor.servers = [mock]
-        self.spektor.db.item_exists = MagicMock(return_value=False)
+        self.specter.servers = [mock]
+        self.specter.db.item_exists = MagicMock(return_value=False)
 
-        plan = self.spektor.bulk_episode_plan("plex", "show1")
+        plan = self.specter.bulk_episode_plan("plex", "show1")
         self.assertEqual(plan["count"], 3)
         self.assertEqual(plan["unwatched"], 1)
         self.assertEqual(plan["total_size_bytes"], 300_000_000)
@@ -1480,10 +1480,10 @@ class TestBulkPlan(unittest.TestCase):
             {"id": "1", "original_size": 100_000_000, "is_watched": True},
             {"id": "2", "original_size": 200_000_000, "is_watched": False},
         ]
-        self.spektor.servers = [mock]
-        self.spektor.db.item_exists = lambda st, iid: iid == "1"
+        self.specter.servers = [mock]
+        self.specter.db.item_exists = lambda st, iid: iid == "1"
 
-        plan = self.spektor.bulk_episode_plan("plex", "show1")
+        plan = self.specter.bulk_episode_plan("plex", "show1")
         self.assertEqual(plan["count"], 1)
         self.assertEqual(plan["already_archived"], 1)
         self.assertEqual(plan["item_ids"], ["2"])
@@ -1498,8 +1498,8 @@ class TestBulkArchive(unittest.TestCase):
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
 
     def tearDown(self):
         for p in (self.temp_db.name, self.temp_config.name):
@@ -1507,9 +1507,9 @@ class TestBulkArchive(unittest.TestCase):
                 os.unlink(p)
 
     def test_bulk_archive_calls_archive_item(self):
-        self.spektor.archive_item = MagicMock(return_value={"success": True})
-        res = self.spektor.bulk_archive("plex", ["1", "2"])
-        self.assertEqual(self.spektor.archive_item.call_count, 2)
+        self.specter.archive_item = MagicMock(return_value={"success": True})
+        res = self.specter.bulk_archive("plex", ["1", "2"])
+        self.assertEqual(self.specter.archive_item.call_count, 2)
         self.assertEqual(len(res["archived"]), 2)
         self.assertEqual(len(res["errors"]), 0)
 
@@ -1518,8 +1518,8 @@ class TestBulkArchive(unittest.TestCase):
             if iid == "2":
                 return {"success": False, "error": "fail"}
             return {"success": True}
-        self.spektor.archive_item = MagicMock(side_effect=side_effect)
-        res = self.spektor.bulk_archive("plex", ["1", "2"])
+        self.specter.archive_item = MagicMock(side_effect=side_effect)
+        res = self.specter.bulk_archive("plex", ["1", "2"])
         self.assertEqual(len(res["archived"]), 1)
         self.assertEqual(len(res["errors"]), 1)
         self.assertEqual(res["errors"][0]["item_id"], "2")
@@ -1534,29 +1534,29 @@ class TestShowTotalSize(unittest.TestCase):
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
 
     def tearDown(self):
-        import mediaspektor
-        mediaspektor._SHOW_SIZE_CACHE.clear()
+        import mediaspecter
+        mediaspecter._SHOW_SIZE_CACHE.clear()
         for p in (self.temp_db.name, self.temp_config.name):
             if os.path.exists(p):
                 os.unlink(p)
 
     def test_get_show_total_size_populates_cache(self):
-        import mediaspektor
+        import mediaspecter
         mock = MagicMock()
         mock.server_type = "plex"
         mock.get_shows.return_value = [{"id": "s1", "title": "Show", "year": 2025}]
         mock.get_show_total_size.return_value = 500_000_000
         mock.config = {"libraries": ["TV"]}
-        self.spektor.servers = [mock]
+        self.specter.servers = [mock]
 
         from fastapi.testclient import TestClient
-        from mediaspektor import app
-        old_spektor = mediaspektor.GLOBAL_SPEKTOR
-        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        from mediaspecter import app
+        old_specter = mediaspecter.GLOBAL_SPECTER
+        mediaspecter.GLOBAL_SPECTER = self.specter
         try:
             client = TestClient(app)
             resp = client.get("/api/shows")
@@ -1564,13 +1564,13 @@ class TestShowTotalSize(unittest.TestCase):
             data = resp.json()
             self.assertEqual(len(data), 1)
             self.assertEqual(data[0]["total_size"], 500_000_000)
-            self.assertIn(("plex", "s1"), mediaspektor._SHOW_SIZE_CACHE)
+            self.assertIn(("plex", "s1"), mediaspecter._SHOW_SIZE_CACHE)
         finally:
-            mediaspektor.GLOBAL_SPEKTOR = old_spektor
+            mediaspecter.GLOBAL_SPECTER = old_specter
 
     def test_plex_get_show_total_size(self):
-        import mediaspektor
-        with patch("mediaspektor.PlexServer") as mock_ps:
+        import mediaspecter
+        with patch("mediaspecter.PlexServer") as mock_ps:
             mock_se = MagicMock()
             mock_show = MagicMock()
             ep1 = MagicMock()
@@ -1585,7 +1585,7 @@ class TestShowTotalSize(unittest.TestCase):
             mock_ps.return_value.library = MagicMock()
             mock_se.fetchItem.return_value = mock_show
 
-            plex = mediaspektor.PlexConnector(
+            plex = mediaspecter.PlexConnector(
                 {"type": "plex", "url": "http://p", "token": "t", "libraries": ["TV"]}
             )
             plex._server = mock_se
@@ -1595,7 +1595,7 @@ class TestShowTotalSize(unittest.TestCase):
 
 class TestShowMatching(unittest.TestCase):
     def test_normalize_show_title(self):
-        from mediaspektor import _normalize_show_title
+        from mediaspecter import _normalize_show_title
         self.assertEqual(_normalize_show_title("FROM"), "from")
         self.assertEqual(_normalize_show_title("From"), "from")
         self.assertEqual(_normalize_show_title("The Office (US)"), "the office")
@@ -1603,7 +1603,7 @@ class TestShowMatching(unittest.TestCase):
         self.assertEqual(_normalize_show_title("Poker Face (2023)"), "poker face")
 
     def test_titles_match(self):
-        from mediaspektor import _titles_match
+        from mediaspecter import _titles_match
         self.assertTrue(_titles_match("FROM", "From"))
         self.assertTrue(_titles_match("Yellowstone (2018)", "Yellowstone", 2018, None))
         self.assertFalse(_titles_match("The Office", "The Office", 2005, 2001))
@@ -1617,18 +1617,18 @@ class TestShowMatching(unittest.TestCase):
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
 
     def tearDown(self):
-        import mediaspektor
-        mediaspektor._SHOW_SIZE_CACHE.clear()
+        import mediaspecter
+        mediaspecter._SHOW_SIZE_CACHE.clear()
         for p in (self.temp_db.name, self.temp_config.name):
             if os.path.exists(p):
                 os.unlink(p)
 
     def test_shows_id_match_dedupes(self):
-        import mediaspektor
+        import mediaspecter
         srv_a = MagicMock()
         srv_a.server_type = "plex"
         srv_a.config = {"libraries": ["TV"]}
@@ -1645,12 +1645,12 @@ class TestShowMatching(unittest.TestCase):
             "external_ids": {"tvdb": "385376", "imdb": None, "tmdb": None}
         }]
         srv_b.get_show_total_size.return_value = 0
-        self.spektor.servers = [srv_a, srv_b]
+        self.specter.servers = [srv_a, srv_b]
 
         from fastapi.testclient import TestClient
-        from mediaspektor import app
-        old = mediaspektor.GLOBAL_SPEKTOR
-        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        from mediaspecter import app
+        old = mediaspecter.GLOBAL_SPECTER
+        mediaspecter.GLOBAL_SPECTER = self.specter
         try:
             client = TestClient(app)
             resp = client.get("/api/shows")
@@ -1658,10 +1658,10 @@ class TestShowMatching(unittest.TestCase):
             self.assertEqual(len(data), 1)
             self.assertEqual(data[0]["title"], "Stargirl")
         finally:
-            mediaspektor.GLOBAL_SPEKTOR = old
+            mediaspecter.GLOBAL_SPECTER = old
 
     def test_shows_title_fallback_dedupes(self):
-        import mediaspektor
+        import mediaspecter
         srv_a = MagicMock()
         srv_a.server_type = "plex"
         srv_a.config = {"libraries": ["TV"]}
@@ -1678,22 +1678,22 @@ class TestShowMatching(unittest.TestCase):
             "external_ids": {}
         }]
         srv_b.get_show_total_size.return_value = 0
-        self.spektor.servers = [srv_a, srv_b]
+        self.specter.servers = [srv_a, srv_b]
 
         from fastapi.testclient import TestClient
-        from mediaspektor import app
-        old = mediaspektor.GLOBAL_SPEKTOR
-        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        from mediaspecter import app
+        old = mediaspecter.GLOBAL_SPECTER
+        mediaspecter.GLOBAL_SPECTER = self.specter
         try:
             client = TestClient(app)
             resp = client.get("/api/shows")
             data = resp.json()
             self.assertEqual(len(data), 1)
         finally:
-            mediaspektor.GLOBAL_SPEKTOR = old
+            mediaspecter.GLOBAL_SPECTER = old
 
     def test_shows_distinct_remain_separate(self):
-        import mediaspektor
+        import mediaspecter
         srv = MagicMock()
         srv.server_type = "plex"
         srv.config = {"libraries": ["TV"]}
@@ -1702,19 +1702,19 @@ class TestShowMatching(unittest.TestCase):
             {"id": "a2", "title": "Better Call Saul", "year": 2015, "external_ids": {"tvdb": "273181"}},
         ]
         srv.get_show_total_size.return_value = 0
-        self.spektor.servers = [srv]
+        self.specter.servers = [srv]
 
         from fastapi.testclient import TestClient
-        from mediaspektor import app
-        old = mediaspektor.GLOBAL_SPEKTOR
-        mediaspektor.GLOBAL_SPEKTOR = self.spektor
+        from mediaspecter import app
+        old = mediaspecter.GLOBAL_SPECTER
+        mediaspecter.GLOBAL_SPECTER = self.specter
         try:
             client = TestClient(app)
             resp = client.get("/api/shows")
             data = resp.json()
             self.assertEqual(len(data), 2)
         finally:
-            mediaspektor.GLOBAL_SPEKTOR = old
+            mediaspecter.GLOBAL_SPECTER = old
 
 
 class TestRollupBadges(unittest.TestCase):
@@ -1726,8 +1726,8 @@ class TestRollupBadges(unittest.TestCase):
         import yaml
         with open(self.temp_config.name, "w") as f:
             yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
-        self.spektor = MediaSpektor(self.temp_config.name)
-        self.spektor.db = Database(self.temp_db.name)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
 
     def tearDown(self):
         for p in (self.temp_db.name, self.temp_config.name):
@@ -1735,40 +1735,40 @@ class TestRollupBadges(unittest.TestCase):
                 os.unlink(p)
 
     def test_rollup_db_methods(self):
-        self.spektor.db.add_rollup_badge("plex", "123", "season", "/backups/plex_123_season_original.jpg")
-        row = self.spektor.db.get_rollup_badge("plex", "123")
+        self.specter.db.add_rollup_badge("plex", "123", "season", "/backups/plex_123_season_original.jpg")
+        row = self.specter.db.get_rollup_badge("plex", "123")
         self.assertIsNotNone(row)
         self.assertEqual(row["kind"], "season")
         self.assertEqual(row["backup_poster_path"], "/backups/plex_123_season_original.jpg")
-        self.spektor.db.remove_rollup_badge("plex", "123")
-        self.assertIsNone(self.spektor.db.get_rollup_badge("plex", "123"))
+        self.specter.db.remove_rollup_badge("plex", "123")
+        self.assertIsNone(self.specter.db.get_rollup_badge("plex", "123"))
 
     def test_sonarr_season_ended(self):
         past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
         future = (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
         # all past -> True
-        self.assertTrue(MediaSpektor._sonarr_season_ended(
+        self.assertTrue(MediaSpecter._sonarr_season_ended(
             [{"seasonNumber": 1, "airDateUtc": past}], 1))
         # future -> False
-        self.assertFalse(MediaSpektor._sonarr_season_ended(
+        self.assertFalse(MediaSpecter._sonarr_season_ended(
             [{"seasonNumber": 1, "airDateUtc": past}, {"seasonNumber": 1, "airDateUtc": future}], 1))
         # null airDateUtc -> False
-        self.assertFalse(MediaSpektor._sonarr_season_ended(
+        self.assertFalse(MediaSpecter._sonarr_season_ended(
             [{"seasonNumber": 1, "airDateUtc": None}], 1))
         # empty -> False
-        self.assertFalse(MediaSpektor._sonarr_season_ended([], 1))
+        self.assertFalse(MediaSpecter._sonarr_season_ended([], 1))
 
     def test_reconcile_badges_season_and_series(self):
         show = {"id": "s1", "title": "Test Show", "year": 2020, "external_ids": {"tvdb": "123"}}
         season = {"id": "sea1", "season_number": 1}
         ep1 = {"id": "e1", "original_size": 100_000_000}
         ep2 = {"id": "e2", "original_size": 200_000_000}
-        self.spektor.db.insert(
+        self.specter.db.insert(
             server_type="plex", server_item_id="e1", title="E1", media_type="episode",
             original_path="/tv/e1.mkv", original_size_bytes=100_000_000, dummy_size_bytes=1024,
             status="archived"
         )
-        self.spektor.db.insert(
+        self.specter.db.insert(
             server_type="plex", server_item_id="e2", title="E2", media_type="episode",
             original_path="/tv/e2.mkv", original_size_bytes=200_000_000, dummy_size_bytes=1024,
             status="archived"
@@ -1782,27 +1782,27 @@ class TestRollupBadges(unittest.TestCase):
         mock.get_episodes.return_value = [ep1, ep2]
         mock.download_poster.return_value = True
         mock.upload_poster.return_value = True
-        self.spektor.servers = [mock]
+        self.specter.servers = [mock]
 
-        self.spektor.overlay.apply_overlay = MagicMock(return_value=True)
-        self.spektor.sonarr = MagicMock()
-        self.spektor.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
+        self.specter.overlay.apply_overlay = MagicMock(return_value=True)
+        self.specter.sonarr = MagicMock()
+        self.specter.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
         past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        self.spektor.sonarr.get_series_episodes.return_value = [
+        self.specter.sonarr.get_series_episodes.return_value = [
             {"seasonNumber": 1, "airDateUtc": past},
         ]
 
-        with patch("mediaspektor.shutil.copy2"), patch("os.path.exists", return_value=False):
-            res = self.spektor.reconcile_rollup_badges()
+        with patch("mediaspecter.shutil.copy2"), patch("os.path.exists", return_value=False):
+            res = self.specter.reconcile_rollup_badges()
         self.assertIn("plex:season:sea1", res["badged"])
         self.assertIn("plex:series:s1", res["badged"])
-        self.assertIsNotNone(self.spektor.db.get_rollup_badge("plex", "sea1"))
-        self.assertIsNotNone(self.spektor.db.get_rollup_badge("plex", "s1"))
+        self.assertIsNotNone(self.specter.db.get_rollup_badge("plex", "sea1"))
+        self.assertIsNotNone(self.specter.db.get_rollup_badge("plex", "s1"))
 
     def test_reconcile_unbadges_when_not_fully_archived(self):
         show = {"id": "s1", "title": "Show", "year": 2020, "external_ids": {"tvdb": "123"}}
         season = {"id": "sea1", "season_number": 1}
-        self.spektor.db.insert(
+        self.specter.db.insert(
             server_type="plex", server_item_id="e1", title="E1", media_type="episode",
             original_path="/tv/e1.mkv", original_size_bytes=100_000_000, dummy_size_bytes=1024,
             status="archived"
@@ -1810,10 +1810,10 @@ class TestRollupBadges(unittest.TestCase):
         # e2 NOT archived -> season not fully archived
         ep1 = {"id": "e1", "original_size": 100_000_000}
         ep2 = {"id": "e2", "original_size": 200_000_000}
-        backup_path = str(self.spektor.backup_dir / "plex_sea1_season_original.jpg")
+        backup_path = str(self.specter.backup_dir / "plex_sea1_season_original.jpg")
         with open(backup_path, "w") as f:
             f.write("fake")
-        self.spektor.db.add_rollup_badge("plex", "sea1", "season", backup_path)
+        self.specter.db.add_rollup_badge("plex", "sea1", "season", backup_path)
 
         mock = MagicMock()
         mock.server_type = "plex"
@@ -1823,23 +1823,23 @@ class TestRollupBadges(unittest.TestCase):
         mock.get_episodes.return_value = [ep1, ep2]
         mock.download_poster.return_value = True
         mock.upload_poster.return_value = True
-        self.spektor.servers = [mock]
+        self.specter.servers = [mock]
 
-        self.spektor.sonarr = MagicMock()
-        self.spektor.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
+        self.specter.sonarr = MagicMock()
+        self.specter.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
         past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        self.spektor.sonarr.get_series_episodes.return_value = [
+        self.specter.sonarr.get_series_episodes.return_value = [
             {"seasonNumber": 1, "airDateUtc": past},
         ]
 
-        res = self.spektor.reconcile_rollup_badges()
+        res = self.specter.reconcile_rollup_badges()
         self.assertIn("plex:season:sea1", res["unbadged"])
-        self.assertIsNone(self.spektor.db.get_rollup_badge("plex", "sea1"))
+        self.assertIsNone(self.specter.db.get_rollup_badge("plex", "sea1"))
         mock.upload_poster.assert_called_with("sea1", backup_path)
 
     def test_reconcile_skips_without_sonarr(self):
-        self.spektor.sonarr = None
-        res = self.spektor.reconcile_rollup_badges()
+        self.specter.sonarr = None
+        res = self.specter.reconcile_rollup_badges()
         self.assertIn("skipped", res)
         self.assertEqual(res["skipped"], "Sonarr not configured")
 

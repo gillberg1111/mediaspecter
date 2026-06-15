@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate the branded dummy replacement videos and splice their base64 into
-mediaspektor.py's DUMMY_VIDEOS.
+mediaspecter.py's DUMMY_VIDEOS.
 
 Produces a short, clean clip per container (.mp4/.mkv/.avi) showing the current
-MediaSpektor brand — mint ghost glyph + Media/Spektor wordmark on near-black —
+MediaSpecter brand — mint ghost glyph + Media/Specter wordmark on near-black —
 that plays in any player when someone opens an archived stub. Requires ImageMagick
 (`magick`) for glyph rasterisation and `ffmpeg` for encoding.
 
@@ -20,9 +20,9 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GLYPH_SVG = os.path.join(ROOT, "static", "mediaspektor-icon.svg")
+GLYPH_SVG = os.path.join(ROOT, "static", "mediaspecter-icon.svg")
 OUT_DIR = os.path.join(ROOT, "scratch", "videos")
-SOURCE = os.path.join(ROOT, "mediaspektor.py")
+SOURCE = os.path.join(ROOT, "mediaspecter.py")
 
 W, H = 1280, 720
 BG = (8, 11, 10)            # #080B0A
@@ -59,16 +59,16 @@ def build_frame(path: str) -> None:
 
     draw = ImageDraw.Draw(img)
 
-    # Wordmark: "Media" (white) + "Spektor" (mint), centered
+    # Wordmark: "Media" (white) + "Specter" (mint), centered
     wm_font = _font(FONT_BOLD, 72)
-    media, spektor = "Media", "Spektor"
+    media, specter = "Media", "Specter"
     w_media = draw.textlength(media, font=wm_font)
-    w_spektor = draw.textlength(spektor, font=wm_font)
-    total = w_media + w_spektor
+    w_specter = draw.textlength(specter, font=wm_font)
+    total = w_media + w_specter
     x = (W - total) / 2
     y = 470
     draw.text((x, y), media, font=wm_font, fill=WHITE)
-    draw.text((x + w_media, y), spektor, font=wm_font, fill=MINT)
+    draw.text((x + w_media, y), specter, font=wm_font, fill=MINT)
 
     # Sub copy
     sub_font = _font(FONT_REG, 28)

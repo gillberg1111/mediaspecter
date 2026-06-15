@@ -14,13 +14,13 @@ mkdir -p "$(dirname "$CONFIG")"
 # On first run there is no config yet — seed one from the bundled example so the
 # container boots and the dashboard/Settings page is reachable to finish setup.
 if [ ! -f "$CONFIG" ]; then
-    echo "[mediaspektor] No config at $CONFIG — seeding from config.yaml.example"
+    echo "[mediaspecter] No config at $CONFIG — seeding from config.yaml.example"
     cp /app/config.yaml.example "$CONFIG"
 fi
 
 # The persisted config dir should be owned by the user we drop to.
 chown -R "$PUID:$PGID" /config 2>/dev/null || true
 
-echo "[mediaspektor] starting as ${PUID}:${PGID}"
+echo "[mediaspecter] starting as ${PUID}:${PGID}"
 export HOME=/config
-exec gosu "${PUID}:${PGID}" python3 mediaspektor.py --host 0.0.0.0 --port 5000 --config "$CONFIG"
+exec gosu "${PUID}:${PGID}" python3 mediaspecter.py --host 0.0.0.0 --port 5000 --config "$CONFIG"

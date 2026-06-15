@@ -21,7 +21,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 
-# MediaSpektor databases and state files
+# MediaSpecter databases and state files
 *.db
 *.db-journal
 *.db-wal
@@ -36,7 +36,7 @@ config.yaml
 
 # Engineering documents and prompt markdown files
 deepseek_prompt.md
-mediaspektor_specification.md
+mediaspecter_specification.md
 
 # Local AI collaboration workflow (personal artifact, not part of the repo)
 WORKFLOW.md
@@ -48,3 +48,6 @@ scratch/videos/
 deepseek_task_*.md
 gemini_*.md
 *_architecture_doc.md
+
+# legacy internal spec (pre-rename) — keep local
+mediaspektor_specification.md

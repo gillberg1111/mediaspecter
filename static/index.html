@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MediaSpektor — Storage Dashboard</title>
+    <title>MediaSpecter — Storage Dashboard</title>
     <!-- Type (per brand style guide): Space Grotesk + JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,9 +16,9 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Spektor">
-    <link rel="icon" type="image/svg+xml" href="/static/mediaspektor-icon-tile.svg">
-    <link rel="icon" type="image/png" sizes="192x192" href="/static/mediaspektor-192.png">
+    <meta name="apple-mobile-web-app-title" content="Specter">
+    <link rel="icon" type="image/svg+xml" href="/static/mediaspecter-icon-tile.svg">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/mediaspecter-192.png">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="manifest" href="/static/manifest.webmanifest">
 
@@ -36,8 +36,8 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="brand">
-                <img src="/static/mediaspektor-icon.svg" class="brand-logo" alt="MediaSpektor" style="width: 30px; height: 30px;">
-                <span class="brand-name ms-logo"><span class="ms-logo__media">Media</span><span class="ms-logo__spektor">Spektor</span></span>
+                <img src="/static/mediaspecter-icon.svg" class="brand-logo" alt="MediaSpecter" style="width: 30px; height: 30px;">
+                <span class="brand-name ms-logo"><span class="ms-logo__media">Media</span><span class="ms-logo__specter">Specter</span></span>
             </div>
             <nav class="nav-menu">
                 <a href="#" class="nav-item active" data-tab="dashboard">
@@ -117,7 +117,7 @@
                     </div>
                 </div>
                 <div class="version-footer">
-                    MediaSpektor v1.5.0
+                    MediaSpecter v2.0.0
                 </div>
             </section>
 
@@ -136,7 +136,7 @@
                     <!-- Cards injected here -->
                 </div>
                 <div class="version-footer">
-                    MediaSpektor v1.5.0
+                    MediaSpecter v2.0.0
                 </div>
             </section>
 
@@ -155,7 +155,7 @@
                     <!-- Cards injected here -->
                 </div>
                 <div class="version-footer">
-                    MediaSpektor v1.5.0
+                    MediaSpecter v2.0.0
                 </div>
             </section>
 
@@ -461,7 +461,7 @@
                     </div>
                 </form>
                 <div class="version-footer">
-                    MediaSpektor v1.5.0
+                    MediaSpecter v2.0.0
                 </div>
             </section>
         </main>
@@ -475,7 +475,7 @@
             <span class="close-modal" data-modal="modal-seasons">&times;</span>
             <div class="modal-header">
                 <h2 id="seasons-title">Show Seasons</h2>
-                <button id="btn-bulk-series" class="btn btn-primary btn-xs" onclick="window.bulkSpektorHandler('series')"><i class="fa-solid fa-ghost"></i> Spektor Entire Series</button>
+                <button id="btn-bulk-series" class="btn btn-primary btn-xs" onclick="window.bulkSpecterHandler('series')"><i class="fa-solid fa-ghost"></i> Specter Entire Series</button>
             </div>
             <div class="modal-body">
                 <div id="seasons-grid" class="media-grid">
@@ -491,7 +491,7 @@
             <span class="close-modal" data-modal="modal-episodes">&times;</span>
             <div class="modal-header">
                 <h2 id="episodes-title">Season Episodes</h2>
-                <button id="btn-bulk-season" class="btn btn-primary btn-xs" onclick="window.bulkSpektorHandler('season')"><i class="fa-solid fa-ghost"></i> Spektor Entire Season</button>
+                <button id="btn-bulk-season" class="btn btn-primary btn-xs" onclick="window.bulkSpecterHandler('season')"><i class="fa-solid fa-ghost"></i> Specter Entire Season</button>
             </div>
             <div class="modal-body">
                 <div class="table-container">
@@ -548,7 +548,7 @@
     <div id="modal-password" class="login-overlay">
         <div class="login-card glass">
             <div class="login-header">
-                <img src="/static/mediaspektor-icon.svg" class="login-logo" alt="MediaSpektor">
+                <img src="/static/mediaspecter-icon.svg" class="login-logo" alt="MediaSpecter">
                 <h2>Secure your dashboard</h2>
                 <p class="catchphrase">You're still on the default password. Set a strong one to protect your server tokens and media.</p>
             </div>
@@ -572,8 +572,8 @@
     <div id="login-overlay" class="login-overlay">
         <div class="login-card glass">
             <div class="login-header">
-                <img src="/static/mediaspektor-icon.svg" class="login-logo" alt="MediaSpektor">
-                <h2 class="ms-logo"><span class="ms-logo__media">Media</span><span class="ms-logo__spektor">Spektor</span></h2>
+                <img src="/static/mediaspecter-icon.svg" class="login-logo" alt="MediaSpecter">
+                <h2 class="ms-logo"><span class="ms-logo__media">Media</span><span class="ms-logo__specter">Specter</span></h2>
                 <p class="catchphrase">Reclaim your space. Keep your library.<span class="tagline-ghost">A <span class="ghost-word">ghost</span> of what you watched.</span></p>
             </div>
             <form id="login-form">

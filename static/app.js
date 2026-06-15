@@ -155,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Action state for confirmation modal
     let pendingAction = {
-        type: null, // "spektor" or "restore"
+        type: null, // "specter" or "restore"
         serverType: null,
         itemId: null,
         title: null,
@@ -479,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Click to trigger action
             card.addEventListener("click", () => {
                 promptAction(
-                    movie.status === "archived" ? "restore" : "spektor",
+                    movie.status === "archived" ? "restore" : "specter",
                     movie.server_type,
                     movie.id,
                     movie.title,
@@ -698,7 +698,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (ep.status === "archived") {
                         actionButton = `<button class="btn btn-success btn-xs" onclick="window.triggerEpisodeAction('restore', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-rotate-left"></i> Restore</button>`;
                     } else {
-                        actionButton = `<button class="btn btn-primary btn-xs" onclick="window.triggerEpisodeAction('spektor', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-ghost"></i> Spektor</button>`;
+                        actionButton = `<button class="btn btn-primary btn-xs" onclick="window.triggerEpisodeAction('specter', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-ghost"></i> Specter</button>`;
                     }
 
                     row.innerHTML = `
@@ -731,7 +731,7 @@ document.addEventListener("DOMContentLoaded", () => {
         pendingAction = { type: action, serverType, itemId, title, filePath, size };
         
         const isRestore = action === "restore";
-        document.getElementById("confirm-msg").innerHTML = `Are you sure you want to <strong>${isRestore ? 'RESTORE' : 'SPEKTOR'}</strong> item:<br><strong>${title}</strong>?`;
+        document.getElementById("confirm-msg").innerHTML = `Are you sure you want to <strong>${isRestore ? 'RESTORE' : 'SPECTER'}</strong> item:<br><strong>${title}</strong>?`;
         document.getElementById("confirm-file-path").textContent = filePath || "N/A";
         document.getElementById("confirm-saved-size").textContent = formatBytes(size);
         
@@ -748,7 +748,7 @@ document.addEventListener("DOMContentLoaded", () => {
             refreshMonitorButton();   // shows the *Arr toggle if available
         } else {
             execBtn.className = "btn btn-danger";
-            execBtn.textContent = "Confirm Spektor";
+            execBtn.textContent = "Confirm Specter";
             btnRegenPoster.style.display = "none";
             btnRegenVideo.style.display = "none";
             btnMonitor.style.display = "none";
@@ -819,7 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
         closeModal(modalConfirm);
         
         const { type, serverType, itemId, title } = pendingAction;
-        const endpoint = type === "restore" ? "/api/restore" : "/api/spektor";
+        const endpoint = type === "restore" ? "/api/restore" : "/api/specter";
         
         showToast(`${type === 'restore' ? 'Queued restoration' : 'Queued archival'} for '${title}'...`, "warning");
 
@@ -1075,7 +1075,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    window.bulkSpektor = function(serverType, showId, seasonId, label) {
+    window.bulkSpecter = function(serverType, showId, seasonId, label) {
         const url = `/api/shows/${serverType}/${showId}/plan` + (seasonId ? '?season_id=' + encodeURIComponent(seasonId) : '');
         fetch(url)
             .then(res => res.json())
@@ -1085,15 +1085,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 if (plan.count === 0) {
-                    showToast("Nothing to Spektor (all already archived).", "warning");
+                    showToast("Nothing to Specter (all already archived).", "warning");
                     return;
                 }
-                let msg = `Spektor ${plan.count} episodes of ${label} (~${formatBytes(plan.total_size_bytes)})?`;
+                let msg = `Specter ${plan.count} episodes of ${label} (~${formatBytes(plan.total_size_bytes)})?`;
                 if (plan.unwatched > 0) {
                     msg += `\n\n⚠ ${plan.unwatched} of these are UNWATCHED and will be replaced too.`;
                 }
                 if (!confirm(msg)) return;
-                fetch("/api/spektor-bulk", {
+                fetch("/api/specter-bulk", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ server_type: serverType, show_id: showId, season_id: seasonId || null })
@@ -1101,21 +1101,21 @@ document.addEventListener("DOMContentLoaded", () => {
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
-                        showToast("Bulk Spektor queued. Check dashboard log.", "success");
+                        showToast("Bulk Specter queued. Check dashboard log.", "success");
                         const modal = document.getElementById("modal-episodes");
                         const modal2 = document.getElementById("modal-seasons");
                         if (modal) closeModal(modal);
                         if (modal2) closeModal(modal2);
                     } else {
-                        showToast("Error queueing bulk Spektor.", "error");
+                        showToast("Error queueing bulk Specter.", "error");
                     }
                 })
-                .catch(() => showToast("Server error during bulk Spektor request.", "error"));
+                .catch(() => showToast("Server error during bulk Specter request.", "error"));
             })
             .catch(() => showToast("Failed to fetch bulk plan.", "error"));
     };
 
-    window.bulkSpektorHandler = function(type) {
+    window.bulkSpecterHandler = function(type) {
         let btn, label, seasonId;
         if (type === "series") {
             btn = document.getElementById("btn-bulk-series");
@@ -1127,7 +1127,7 @@ document.addEventListener("DOMContentLoaded", () => {
             label = btn ? btn.dataset.seasonTitle : "season";
         }
         if (!btn) return;
-        window.bulkSpektor(btn.dataset.serverType, btn.dataset.showId, seasonId, label);
+        window.bulkSpecter(btn.dataset.serverType, btn.dataset.showId, seasonId, label);
     };
 
     // -----------------------------------------------------------------------

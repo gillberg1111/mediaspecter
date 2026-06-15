@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MediaSpektor - Reclaim disk space by replacing watched media with tiny dummy video files.
+"""MediaSpecter - Reclaim disk space by replacing watched media with tiny dummy video files.
 
 Supports Plex, Jellyfin, and Emby media servers. Applies poster overlays to mark
 archived content and integrates with Radarr/Sonarr to prevent re-downloads.
@@ -28,7 +28,7 @@ import requests
 import yaml
 from PIL import Image, ImageDraw, ImageFont
 
-logger = logging.getLogger("mediaspektor")
+logger = logging.getLogger("mediaspecter")
 
 # Shared HTTP session with a generous connection pool. The dashboard proxies
 # every poster through the backend; on mobile a grid loads many at once, which
@@ -507,7 +507,7 @@ class TmdbClient:
 class Database:
     """SQLite state database for tracking archived items."""
 
-    def __init__(self, db_path: str = "mediaspektor.db") -> None:
+    def __init__(self, db_path: str = "mediaspecter.db") -> None:
         self.db_path = db_path
         self._init_db()
 
@@ -1056,7 +1056,7 @@ class JellyfinConnector(BaseMediaServer):
 
     def authenticate(self) -> None:
         url = urljoin(self.base_url + "/", "Users/AuthenticateByName")
-        auth_header = 'MediaBrowser Client="MediaSpektor", Device="Server", DeviceId="MediaSpektorID", Version="1.0"'
+        auth_header = 'MediaBrowser Client="MediaSpecter", Device="Server", DeviceId="MediaSpecterID", Version="1.0"'
         headers = {
             "Content-Type": "application/json",
             "X-Emby-Authorization": auth_header
@@ -1230,7 +1230,7 @@ class JellyfinConnector(BaseMediaServer):
                 "POST",
                 f"Items/{item_id}/Images/Primary",
                 data=payload,
-                params={"X-Emby-Client": "MediaSpektor"},
+                params={"X-Emby-Client": "MediaSpecter"},
                 req_headers={"Content-Type": "image/jpeg"},
             )
             return True
@@ -1647,7 +1647,7 @@ class EmbyConnector(BaseMediaServer):
                 url,
                 headers=upload_headers,
                 data=payload,
-                params={"X-Emby-Client": "MediaSpektor"},
+                params={"X-Emby-Client": "MediaSpecter"},
                 timeout=30,
             )
             resp.raise_for_status()
@@ -1936,7 +1936,7 @@ class RadarrClient:
                 logger.warning(
                     "Radarr: no matching movie for path '%s' (ids=%s) among %d movies. "
                     "If Radarr mounts the library at a different path than the media server, "
-                    "set a TMDB key so MediaSpektor can match by ID instead of path.",
+                    "set a TMDB key so MediaSpecter can match by ID instead of path.",
                     file_path, external_ids or {}, len(movies),
                 )
                 return False
@@ -2206,9 +2206,9 @@ class PosterOverlay:
 
 
 # ---------------------------------------------------------------------------
-# MediaSpektor Orchestrator
+# MediaSpecter Orchestrator
 # ---------------------------------------------------------------------------
-class MediaSpektor:
+class MediaSpecter:
     def __init__(self, config_path: str = "config.yaml") -> None:
         with open(config_path, "r") as f:
             self.config: dict = yaml.safe_load(f)
@@ -2229,7 +2229,18 @@ class MediaSpektor:
             )
 
         config_dir = os.path.dirname(os.path.abspath(config_path))
-        db_path = os.path.join(config_dir, "mediaspektor.db")
+        db_path = os.path.join(config_dir, "mediaspecter.db")
+        # Migration: the DB was named mediaspektor.db before the rename. If an old
+        # DB exists and the new one doesn't yet, move it so existing installs keep
+        # their archive state and rollup badges across the upgrade.
+        legacy_db = os.path.join(config_dir, "mediaspektor.db")
+        if os.path.exists(legacy_db) and not os.path.exists(db_path):
+            try:
+                os.rename(legacy_db, db_path)
+                logger.info("Migrated archive database mediaspektor.db -> mediaspecter.db")
+            except OSError as exc:
+                logger.warning("Could not migrate legacy database, using it in place: %s", exc)
+                db_path = legacy_db
         self.db = Database(db_path)
 
         self.overlay = PosterOverlay(self.config)
@@ -2459,7 +2470,7 @@ class MediaSpektor:
 
                 try:
                     # 1. Download poster
-                    poster_tmp = f"/tmp/mediaspektor_poster_{item_id}.jpg"
+                    poster_tmp = f"/tmp/mediaspecter_poster_{item_id}.jpg"
                     if server.download_poster(item_id, poster_tmp):
                         # Backup original poster
                         poster_backup = (
@@ -2887,13 +2898,13 @@ class MediaSpektor:
         directory = os.path.dirname(file_path) or "."
         if not os.path.isfile(file_path):
             raise FileNotFoundError(
-                f"Original media not found at '{file_path}'. MediaSpektor cannot reach the file "
+                f"Original media not found at '{file_path}'. MediaSpecter cannot reach the file "
                 f"— ensure the media share is mounted at the same path the server reports "
                 f"(e.g. /data) with read/write access."
             )
         if not os.access(directory, os.W_OK):
             raise PermissionError(
-                f"Directory '{directory}' is not writable by MediaSpektor — check the "
+                f"Directory '{directory}' is not writable by MediaSpecter — check the "
                 f"container/user permissions and the volume mount."
             )
 
@@ -2969,13 +2980,13 @@ class MediaSpektor:
             gb_saved = (original_size - 20000) / (1024**3)
 
             # SAFETY GATE — honor the Dry-Run switch for the single-item
-            # (UI-triggered) archive. Without this the "Confirm Spektor" button
+            # (UI-triggered) archive. Without this the "Confirm Specter" button
             # irreversibly swaps the real media file even with Dry-Run enabled,
             # which has destroyed real files. (allow_automated_archival is NOT
             # gated here — that switch governs the scheduled/bulk run; a manual
             # click is a deliberate, explicit action.)
             if self.config.get("safety", {}).get("dry_run", False):
-                logger.info("[DRY-RUN] Would Spektor: %s (%.2f GB) — no files changed.", title, gb_saved)
+                logger.info("[DRY-RUN] Would Specter: %s (%.2f GB) — no files changed.", title, gb_saved)
                 results["success"] = True
                 results["dry_run"] = True
                 results["error"] = None
@@ -2984,7 +2995,7 @@ class MediaSpektor:
                 )
                 return results
 
-            logger.info("Spektoring single item: %s (%.2f GB) — propagating to all servers", title, gb_saved)
+            logger.info("Spectering single item: %s (%.2f GB) — propagating to all servers", title, gb_saved)
 
             # Expand external IDs once (noop without TMDB key; movies only).
             expanded_ids = self._expand_external_ids(media_type, item["external_ids"])
@@ -3006,7 +3017,7 @@ class MediaSpektor:
                 local_type = server.server_type
                 backup_poster_path: str | None = None
                 try:
-                    poster_tmp = f"/tmp/mediaspektor_poster_{local_type}_{local_id}.jpg"
+                    poster_tmp = f"/tmp/mediaspecter_poster_{local_type}_{local_id}.jpg"
                     if server.download_poster(local_id, poster_tmp):
                         poster_backup = self.backup_dir / f"{local_type}_{local_id}_poster_original.jpg"
                         shutil.copy2(poster_tmp, str(poster_backup))
@@ -3090,7 +3101,7 @@ class MediaSpektor:
                 self.sonarr.unmonitor_episode_by_path(file_path)
 
             results["success"] = True
-            logger.info("Successfully archived and 'Spektored' item: %s", title)
+            logger.info("Successfully archived and 'Spectered' item: %s", title)
             return results
 
         except Exception as exc:
@@ -3099,7 +3110,7 @@ class MediaSpektor:
             return results
 
     def bulk_episode_plan(self, server_type: str, show_id: str, season_id: str | None = None) -> dict[str, Any]:
-        """List episodes that a season/series bulk-Spektor would archive (those not already
+        """List episodes that a season/series bulk-Specter would archive (those not already
         archived), with counts and total size for the confirmation dialog."""
         server = next((s for s in self.servers if s.server_type == server_type), None)
         if not server:
@@ -3151,9 +3162,9 @@ class MemoryLogHandler(logging.Handler):
 memory_log_handler = MemoryLogHandler()
 memory_log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
 memory_log_handler.setLevel(logging.INFO)
-# Attach only to the root logger. The "mediaspektor" logger propagates to root,
+# Attach only to the root logger. The "mediaspecter" logger propagates to root,
 # so adding the same handler to both captured every record twice (doubled lines
-# in the dashboard activity log). Root alone captures mediaspektor + libraries once.
+# in the dashboard activity log). Root alone captures mediaspecter + libraries once.
 logging.getLogger().addHandler(memory_log_handler)
 
 # Initialize FastAPI App
@@ -3163,7 +3174,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uuid
 
-app = FastAPI(title="MediaSpektor", description="Modern self-hosted watch state storage archiver")
+app = FastAPI(title="MediaSpecter", description="Modern self-hosted watch state storage archiver")
 
 # Authentication session memory
 VALID_SESSIONS: set[str] = set()
@@ -3176,12 +3187,12 @@ def _invalidate_other_sessions(keep: str | None = None) -> None:
         VALID_SESSIONS.add(keep)
 
 def verify_auth(request: Request):
-    spektor = get_spektor()
-    security_config = spektor.config.get("security", {})
+    specter = get_specter()
+    security_config = specter.config.get("security", {})
     if not security_config.get("enabled", False):
         return
     
-    session_cookie = request.cookies.get("mediaspektor_session")
+    session_cookie = request.cookies.get("mediaspecter_session")
     if not session_cookie or session_cookie not in VALID_SESSIONS:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -3190,14 +3201,14 @@ def verify_auth(request: Request):
 # rejected by browsers and a security smell, so it is intentionally omitted.)
 
 # Global variables for Orchestrator and config path
-GLOBAL_SPEKTOR: MediaSpektor | None = None
+GLOBAL_SPECTER: MediaSpecter | None = None
 CONFIG_PATH: str = "config.yaml"
 
-def get_spektor() -> MediaSpektor:
-    global GLOBAL_SPEKTOR
-    if GLOBAL_SPEKTOR is None:
-        GLOBAL_SPEKTOR = MediaSpektor(CONFIG_PATH)
-    return GLOBAL_SPEKTOR
+def get_specter() -> MediaSpecter:
+    global GLOBAL_SPECTER
+    if GLOBAL_SPECTER is None:
+        GLOBAL_SPECTER = MediaSpecter(CONFIG_PATH)
+    return GLOBAL_SPECTER
 
 # Static files mapping
 os.makedirs("static", exist_ok=True)
@@ -3224,8 +3235,8 @@ def _cookie_secure(security_config: dict) -> bool:
 
 @app.post("/api/login")
 def api_login(req: LoginReq, request: Request, response: Response):
-    spektor = get_spektor()
-    security_config = spektor.config.get("security", {})
+    specter = get_specter()
+    security_config = specter.config.get("security", {})
     if not security_config.get("enabled", False):
         return {"success": True}
 
@@ -3239,7 +3250,7 @@ def api_login(req: LoginReq, request: Request, response: Response):
         session_id = str(uuid.uuid4())
         VALID_SESSIONS.add(session_id)
         response.set_cookie(
-            key="mediaspektor_session",
+            key="mediaspecter_session",
             value=session_id,
             httponly=True,
             samesite="lax",
@@ -3253,35 +3264,35 @@ def api_login(req: LoginReq, request: Request, response: Response):
 
 @app.post("/api/logout")
 def api_logout(response: Response, request: Request):
-    session_cookie = request.cookies.get("mediaspektor_session")
+    session_cookie = request.cookies.get("mediaspecter_session")
     if session_cookie in VALID_SESSIONS:
         VALID_SESSIONS.remove(session_cookie)
-    response.delete_cookie(key="mediaspektor_session")
+    response.delete_cookie(key="mediaspecter_session")
     return {"success": True}
 
 @app.get("/api/config", dependencies=[Depends(verify_auth)])
 def get_config():
-    spektor = get_spektor()
-    return spektor.config
+    specter = get_specter()
+    return specter.config
 
 class UpdateConfigReq(BaseModel):
     config: dict
 
 @app.post("/api/config", dependencies=[Depends(verify_auth)])
 def update_config(req: UpdateConfigReq, request: Request):
-    global GLOBAL_SPEKTOR
+    global GLOBAL_SPECTER
     try:
-        old_sec = (get_spektor().config or {}).get("security", {}) or {}
+        old_sec = (get_specter().config or {}).get("security", {}) or {}
         new_cfg = dict(req.config)
         # Never let the settings form silently drop the security block — that would
         # disable authentication. Preserve the existing one if the client omits it.
         if "security" not in new_cfg:
-            existing = (get_spektor().config or {}).get("security")
+            existing = (get_specter().config or {}).get("security")
             if existing:
                 new_cfg["security"] = existing
         with open(CONFIG_PATH, "w") as f:
             yaml.safe_dump(new_cfg, f)
-        GLOBAL_SPEKTOR = MediaSpektor(CONFIG_PATH)
+        GLOBAL_SPECTER = MediaSpecter(CONFIG_PATH)
         # If the dashboard credentials changed, revoke every other live session
         # (keep the caller's) so an old/leaked cookie can't outlive the change.
         new_sec = new_cfg.get("security", {}) or {}
@@ -3289,7 +3300,7 @@ def update_config(req: UpdateConfigReq, request: Request):
             old_sec.get("username") != new_sec.get("username")
             or old_sec.get("password") != new_sec.get("password")
         ):
-            _invalidate_other_sessions(keep=request.cookies.get("mediaspektor_session"))
+            _invalidate_other_sessions(keep=request.cookies.get("mediaspecter_session"))
             logger.info("Dashboard credentials changed via config — other sessions invalidated.")
         logger.info("Configuration updated and reloaded successfully.")
         return {"success": True}
@@ -3304,13 +3315,13 @@ class ChangePasswordReq(BaseModel):
 
 @app.post("/api/change-password", dependencies=[Depends(verify_auth)])
 def change_password(req: ChangePasswordReq, request: Request):
-    global GLOBAL_SPEKTOR
+    global GLOBAL_SPECTER
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
     if req.password in ("", "admin"):
         raise HTTPException(status_code=400, detail="Choose a password other than the default.")
-    spektor = get_spektor()
-    cfg = spektor.config
+    specter = get_specter()
+    cfg = specter.config
     sec = cfg.setdefault("security", {})
     sec["enabled"] = True
     if req.username:
@@ -3319,10 +3330,10 @@ def change_password(req: ChangePasswordReq, request: Request):
     try:
         with open(CONFIG_PATH, "w") as f:
             yaml.safe_dump(cfg, f)
-        GLOBAL_SPEKTOR = MediaSpektor(CONFIG_PATH)
+        GLOBAL_SPECTER = MediaSpecter(CONFIG_PATH)
         # Credentials changed — revoke every other live session, keeping only
         # the caller's so they stay logged in after the change.
-        _invalidate_other_sessions(keep=request.cookies.get("mediaspektor_session"))
+        _invalidate_other_sessions(keep=request.cookies.get("mediaspecter_session"))
         logger.info("Dashboard password updated; other sessions invalidated.")
         return {"success": True}
     except Exception as exc:
@@ -3330,8 +3341,8 @@ def change_password(req: ChangePasswordReq, request: Request):
 
 @app.get("/api/stats", dependencies=[Depends(verify_auth)])
 def get_web_stats():
-    spektor = get_spektor()
-    return spektor.stats()
+    specter = get_specter()
+    return specter.stats()
 
 @app.get("/api/logs", dependencies=[Depends(verify_auth)])
 def get_web_logs():
@@ -3339,16 +3350,16 @@ def get_web_logs():
 
 @app.get("/api/movies", dependencies=[Depends(verify_auth)])
 def get_web_movies():
-    spektor = get_spektor()
+    specter = get_specter()
     # Dedupe the same physical movie across servers sharing one library.
     # Key on file_path (servers mount the library at the same path), falling
     # back to title+year. Keep one card; prefer one already shown as archived.
     by_key: dict[str, dict] = {}
     order: list[str] = []
-    for server in spektor.servers:
+    for server in specter.servers:
         libs = server.config.get("libraries", [])
         for m in server.get_movies(libs):
-            db_item = spektor.db.get_item(server.server_type, m["id"])
+            db_item = specter.db.get_item(server.server_type, m["id"])
             m["status"] = db_item["status"] if db_item else "original"
             m["server_type"] = server.server_type
             key = m.get("file_path") or f"{m.get('title', '')}|{m.get('year', '')}"
@@ -3362,7 +3373,7 @@ def get_web_movies():
 
 @app.get("/api/shows", dependencies=[Depends(verify_auth)])
 def get_web_shows():
-    spektor = get_spektor()
+    specter = get_specter()
     # Dedupe the same series across servers. Shows have no shared file path, and
     # servers report different titles ("FROM"/"From", "The Office"/"The Office (US)",
     # "Stargirl"/"DC's Stargirl"). Match by external ID first (TVDB->IMDB->TMDB),
@@ -3371,7 +3382,7 @@ def get_web_shows():
     # still propagates across servers by path).
     canon: list[dict] = []          # canonical show dicts, in first-seen order
     id_index: dict[str, int] = {}   # "system:id" -> index into canon
-    for server in spektor.servers:
+    for server in specter.servers:
         libs = server.config.get("libraries", [])
         for s in server.get_shows(libs):
             s["server_type"] = server.server_type
@@ -3416,29 +3427,29 @@ def get_web_shows():
 
 @app.get("/api/shows/{server_type}/{show_id}/seasons", dependencies=[Depends(verify_auth)])
 def get_web_seasons(server_type: str, show_id: str):
-    spektor = get_spektor()
-    for server in spektor.servers:
+    specter = get_specter()
+    for server in specter.servers:
         if server.server_type == server_type:
             return server.get_seasons(show_id)
     raise HTTPException(status_code=404, detail="Server type not found or not active")
 
 @app.get("/api/shows/{server_type}/{show_id}/seasons/{season_id}/episodes", dependencies=[Depends(verify_auth)])
 def get_web_episodes(server_type: str, show_id: str, season_id: str):
-    spektor = get_spektor()
-    for server in spektor.servers:
+    specter = get_specter()
+    for server in specter.servers:
         if server.server_type == server_type:
             episodes = server.get_episodes(show_id, season_id)
             for ep in episodes:
-                db_item = spektor.db.get_item(server_type, ep["id"])
+                db_item = specter.db.get_item(server_type, ep["id"])
                 ep["status"] = db_item["status"] if db_item else "original"
             return episodes
     raise HTTPException(status_code=404, detail="Server type not found or not active")
 
 @app.get("/api/posterproxy", dependencies=[Depends(verify_auth)])
 def poster_proxy(server_type: str, item_id: str):
-    spektor = get_spektor()
+    specter = get_specter()
     server = None
-    for s in spektor.servers:
+    for s in specter.servers:
         if s.server_type == server_type:
             server = s
             break
@@ -3477,53 +3488,53 @@ class ActionReq(BaseModel):
     server_type: str
     item_id: str | int  # Plex ratingKeys arrive as JSON numbers; coerced to str at use
 
-def run_bg_spektor(server_type: str, item_id: str):
-    spektor = get_spektor()
-    spektor.archive_item(server_type, item_id)
+def run_bg_specter(server_type: str, item_id: str):
+    specter = get_specter()
+    specter.archive_item(server_type, item_id)
     try:
-        get_spektor().reconcile_rollup_badges()
+        get_specter().reconcile_rollup_badges()
     except Exception as exc:
         logger.error("Rollup reconcile after action failed: %s", exc)
 
 def run_bg_restore(server_type: str, item_id: str):
-    spektor = get_spektor()
-    spektor.restore(server_type, item_id)
+    specter = get_specter()
+    specter.restore(server_type, item_id)
     try:
-        get_spektor().reconcile_rollup_badges()
+        get_specter().reconcile_rollup_badges()
     except Exception as exc:
         logger.error("Rollup reconcile after action failed: %s", exc)
 
-@app.post("/api/spektor", dependencies=[Depends(verify_auth)])
-def trigger_spektor(req: ActionReq, bg_tasks: BackgroundTasks):
-    bg_tasks.add_task(run_bg_spektor, req.server_type, str(req.item_id))
+@app.post("/api/specter", dependencies=[Depends(verify_auth)])
+def trigger_specter(req: ActionReq, bg_tasks: BackgroundTasks):
+    bg_tasks.add_task(run_bg_specter, req.server_type, str(req.item_id))
     return {"success": True, "message": "Archival process queued as background task."}
 
 @app.get("/api/shows/{server_type}/{show_id}/plan", dependencies=[Depends(verify_auth)])
 def bulk_plan(server_type: str, show_id: str, season_id: str | None = None):
-    return get_spektor().bulk_episode_plan(server_type, show_id, season_id)
+    return get_specter().bulk_episode_plan(server_type, show_id, season_id)
 
-class BulkSpektorReq(BaseModel):
+class BulkSpecterReq(BaseModel):
     server_type: str
     show_id: str
     season_id: str | None = None
 
 def run_bg_bulk(server_type: str, show_id: str, season_id: str | None):
-    spektor = get_spektor()
-    plan = spektor.bulk_episode_plan(server_type, show_id, season_id)
-    spektor.bulk_archive(server_type, plan.get("item_ids", []))
+    specter = get_specter()
+    plan = specter.bulk_episode_plan(server_type, show_id, season_id)
+    specter.bulk_archive(server_type, plan.get("item_ids", []))
     try:
-        get_spektor().reconcile_rollup_badges()
+        get_specter().reconcile_rollup_badges()
     except Exception as exc:
         logger.error("Rollup reconcile after action failed: %s", exc)
 
-@app.post("/api/spektor-bulk", dependencies=[Depends(verify_auth)])
-def trigger_bulk(req: BulkSpektorReq, bg_tasks: BackgroundTasks):
+@app.post("/api/specter-bulk", dependencies=[Depends(verify_auth)])
+def trigger_bulk(req: BulkSpecterReq, bg_tasks: BackgroundTasks):
     bg_tasks.add_task(run_bg_bulk, req.server_type, req.show_id, req.season_id)
     return {"success": True, "message": "Bulk archival queued as background task."}
 
 def run_bg_reconcile():
     try:
-        get_spektor().reconcile_rollup_badges()
+        get_specter().reconcile_rollup_badges()
     except Exception as exc:
         logger.error("Manual rollup reconcile failed: %s", exc)
 
@@ -3543,10 +3554,10 @@ class RegenerateReq(BaseModel):
     target: str  # "poster" or "video"
 
 def run_bg_regenerate(server_type: str, item_id: str, target: str):
-    spektor = get_spektor()
+    specter = get_specter()
     logger.info("Starting regeneration (%s) for %s item %s", target, server_type, item_id)
     try:
-        results = spektor.regenerate_item(server_type, item_id, target)
+        results = specter.regenerate_item(server_type, item_id, target)
         if not results.get("success"):
             logger.error("Regeneration failed: %s", results.get("error", "Unknown error"))
         else:
@@ -3563,7 +3574,7 @@ def trigger_regenerate(req: RegenerateReq, bg_tasks: BackgroundTasks):
 
 @app.get("/api/monitor-state", dependencies=[Depends(verify_auth)])
 def get_monitor_state(server_type: str, item_id: str):
-    return get_spektor().get_item_monitor(server_type, str(item_id))
+    return get_specter().get_item_monitor(server_type, str(item_id))
 
 
 class MonitorReq(BaseModel):
@@ -3573,7 +3584,7 @@ class MonitorReq(BaseModel):
 
 @app.post("/api/monitor", dependencies=[Depends(verify_auth)])
 def set_monitor(req: MonitorReq):
-    return get_spektor().set_item_monitor(req.server_type, str(req.item_id), req.monitored)
+    return get_specter().set_item_monitor(req.server_type, str(req.item_id), req.monitored)
 
 
 # ---------------------------------------------------------------------------
@@ -3581,7 +3592,7 @@ def set_monitor(req: MonitorReq):
 # ---------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="MediaSpektor — Reclaim disk space by archiving watched media.",
+        description="MediaSpecter — Reclaim disk space by archiving watched media.",
     )
     parser.add_argument(
         "--config",
@@ -3638,18 +3649,18 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.verbose:
-        logging.getLogger("mediaspektor").setLevel(logging.DEBUG)
+        logging.getLogger("mediaspecter").setLevel(logging.DEBUG)
     else:
-        logging.getLogger("mediaspektor").setLevel(logging.INFO)
+        logging.getLogger("mediaspecter").setLevel(logging.INFO)
 
     global CONFIG_PATH
     CONFIG_PATH = args.config
 
     # Initialize orchestrator
-    get_spektor()
+    get_specter()
 
     if args.scan or args.archive or args.restore or args.stats:
-        ghost = get_spektor()
+        ghost = get_specter()
         if args.stats:
             stats = ghost.stats()
             print(json.dumps(stats, indent=2))
@@ -3685,7 +3696,7 @@ def main() -> None:
                 sys.exit(1)
             return
     else:
-        logger.info("Starting MediaSpektor Self-Hosted Web App...")
+        logger.info("Starting MediaSpecter Self-Hosted Web App...")
         import uvicorn
         # Only trust X-Forwarded-* headers from explicitly configured proxy IPs.
         # Defaulting to "*" would let any client spoof their scheme/address; an
@@ -3695,11 +3706,11 @@ def main() -> None:
             while True:
                 time.sleep(6 * 3600)
                 try:
-                    get_spektor().reconcile_rollup_badges()
+                    get_specter().reconcile_rollup_badges()
                 except Exception as exc:
                     logger.error("Scheduled rollup reconcile failed: %s", exc)
         threading.Thread(target=_badge_timer, daemon=True).start()
-        trusted = get_spektor().config.get("security", {}).get("trusted_proxies")
+        trusted = get_specter().config.get("security", {}).get("trusted_proxies")
         if trusted:
             uvicorn.run(
                 app, host=args.host, port=args.port,

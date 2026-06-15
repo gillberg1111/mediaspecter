@@ -1,7 +1,7 @@
 /* ==========================================================================
-   MediaSpektor — Design System (v0.9)
+   MediaSpecter — Design System (v0.9)
    Per brand style guide: dark-only, single mint accent (#3ECF8E), translucent
-   "ghost" green for the Spektor wordmark + the word "ghost". Space Grotesk +
+   "ghost" green for the Specter wordmark + the word "ghost". Space Grotesk +
    JetBrains Mono. The artwork is the color; the UI stays quiet and spacious.
    ========================================================================== */
 
@@ -26,7 +26,7 @@
     --accent:      #3ECF8E;
     --accent-deep: #1FB9AD;
     --accent-soft: rgba(62, 207, 142, 0.12);
-    --spektor:     rgba(62, 207, 142, 0.6);   /* translucent "ghost" green */
+    --specter:     rgba(62, 207, 142, 0.6);   /* translucent "ghost" green */
     --ghost-indigo: 110, 99, 230;             /* spectral indigo — ghostly bg counterpoint to mint */
     --green:       #3ECF8E;     /* success → mint (single accent) */
     --red:         #E5645B;     /* semantic destructive / error only */
@@ -152,13 +152,13 @@ body {
     font-size: 1.4rem;
     font-weight: 600;
     letter-spacing: -0.04em;
-    color: rgba(62, 207, 142, 0.66);   /* compact "Spektor" — ghost green (guide §3) */
+    color: rgba(62, 207, 142, 0.66);   /* compact "Specter" — ghost green (guide §3) */
 }
 
-/* Full wordmark: Media (white) + Spektor (ghost green) — guide §3 */
+/* Full wordmark: Media (white) + Specter (ghost green) — guide §3 */
 .ms-logo { font-family: var(--sans); font-weight: 600; letter-spacing: -0.04em; line-height: 1; white-space: nowrap; }
 .ms-logo__media { color: var(--text); font-weight: 500; }
-.ms-logo__spektor { color: var(--spektor); }
+.ms-logo__specter { color: var(--specter); }
 
 .nav-menu { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
 .nav-item {

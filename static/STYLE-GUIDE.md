@@ -1,8 +1,8 @@
-# MediaSpektor — Logo & Style System
+# MediaSpecter — Logo & Style System
 
-A technical reference for implementing the MediaSpektor brand in the web app.
+A technical reference for implementing the MediaSpecter brand in the web app.
 Theme is dark-only: mint–teal accent on near-black, with a translucent "ghost"
-green used for the word *Spektor* (and the word *ghost* in copy).
+green used for the word *Specter* (and the word *ghost* in copy).
 
 ---
 
@@ -21,7 +21,7 @@ Drop these into a global stylesheet (`:root`). Everything else references them.
   --ms-mint:          #3ECF8E;   /* primary accent (links, active states, dots) */
   --ms-mint-from:     #54E2A2;   /* icon gradient — top */
   --ms-mint-to:       #1FB9AD;   /* icon gradient — bottom */
-  --ms-spektor:       rgba(62, 207, 142, 0.6); /* translucent "ghost" green */
+  --ms-specter:       rgba(62, 207, 142, 0.6); /* translucent "ghost" green */
 
   /* Text */
   --ms-text:          #F3F7F5;   /* primary text + the word "Media" */
@@ -73,12 +73,12 @@ Load the fonts:
 
 ## 3. The wordmark
 
-`Media` is solid white at weight 500; `Spektor` is the translucent ghost green at
+`Media` is solid white at weight 500; `Specter` is the translucent ghost green at
 weight 600. They sit tight together with no space.
 
 ```html
 <span class="ms-logo">
-  <span class="ms-logo__media">Media</span><span class="ms-logo__spektor">Spektor</span>
+  <span class="ms-logo__media">Media</span><span class="ms-logo__specter">Specter</span>
 </span>
 ```
 
@@ -86,15 +86,15 @@ weight 600. They sit tight together with no space.
 .ms-logo            { font-family: var(--ms-font); font-weight: 600;
                       letter-spacing: -0.04em; line-height: 1; white-space: nowrap; }
 .ms-logo__media     { color: var(--ms-text); font-weight: 500; }
-.ms-logo__spektor   { color: var(--ms-spektor); }
+.ms-logo__specter   { color: var(--ms-specter); }
 ```
 
-**Compact form** (sidebar, where the product is shown as just "Spektor"): use the
-icon + `Spektor` in the ghost green. Bump opacity to `0.66` at small sizes so it
+**Compact form** (sidebar, where the product is shown as just "Specter"): use the
+icon + `Specter` in the ghost green. Bump opacity to `0.66` at small sizes so it
 stays legible:
 
 ```html
-<span class="ms-logo__spektor" style="color: rgba(62,207,142,0.66);">Spektor</span>
+<span class="ms-logo__specter" style="color: rgba(62,207,142,0.66);">Specter</span>
 ```
 
 ---
@@ -102,10 +102,10 @@ stays legible:
 ## 4. The "ghost" highlight rule
 
 Any time the literal word **ghost** appears in brand copy (taglines, hero text),
-render it in the same translucent green as *Spektor*. Reuse one class:
+render it in the same translucent green as *Specter*. Reuse one class:
 
 ```css
-.ms-ghost { color: var(--ms-spektor); font-weight: 600; }
+.ms-ghost { color: var(--ms-specter); font-weight: 600; }
 ```
 
 ```html
@@ -138,14 +138,14 @@ docs) — only in marketing/brand copy.
 
 | File                                | Use |
 |-------------------------------------|-----|
-| `assets/mediaspektor-icon.svg`      | Transparent ghost glyph (knockout eyes). Sidebar mark, inline UI, anywhere on a dark surface. |
-| `assets/mediaspektor-icon-tile.svg` | Glyph on the dark rounded tile. Favicon, PWA/app icon, social. |
-| `assets/mediaspektor-banner.png`    | README / social banner. |
+| `assets/mediaspecter-icon.svg`      | Transparent ghost glyph (knockout eyes). Sidebar mark, inline UI, anywhere on a dark surface. |
+| `assets/mediaspecter-icon-tile.svg` | Glyph on the dark rounded tile. Favicon, PWA/app icon, social. |
+| `assets/mediaspecter-banner.png`    | README / social banner. |
 
 The glyph is pure geometry (no font) — safe to inline. Source:
 
 ```html
-<svg viewBox="0 0 100 100" role="img" aria-label="MediaSpektor" width="100" height="100">
+<svg viewBox="0 0 100 100" role="img" aria-label="MediaSpecter" width="100" height="100">
   <defs>
     <linearGradient id="msFill" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#54E2A2"/>
@@ -176,7 +176,7 @@ The glyph is pure geometry (no font) — safe to inline. Source:
 Favicon (modern browsers accept SVG):
 
 ```html
-<link rel="icon" type="image/svg+xml" href="/assets/mediaspektor-icon-tile.svg">
+<link rel="icon" type="image/svg+xml" href="/assets/mediaspecter-icon-tile.svg">
 ```
 
 ---
@@ -185,12 +185,12 @@ Favicon (modern browsers accept SVG):
 
 **Do**
 - Keep the icon glyph solid mint→teal — it's the legible anchor.
-- Keep `Media` white and `Spektor` translucent green; never swap them.
-- Use `--ms-spektor` for both `Spektor` and the brand word "ghost".
+- Keep `Media` white and `Specter` translucent green; never swap them.
+- Use `--ms-specter` for both `Specter` and the brand word "ghost".
 - Stay on dark surfaces (`--ms-bg` family).
 
 **Don't**
 - Don't put the icon on a light background without the dark tile.
-- Don't drop `Spektor`/"ghost" opacity below ~0.5 (illegible) or raise to 1.0 (loses the effect).
+- Don't drop `Specter`/"ghost" opacity below ~0.5 (illegible) or raise to 1.0 (loses the effect).
 - Don't recolor the glyph gradient or add drop shadows to the wordmark.
 - Don't introduce a second accent hue — the brand is single-accent (mint).

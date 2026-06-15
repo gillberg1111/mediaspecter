@@ -1,14 +1,25 @@
 # Changelog
 
-All notable changes to **MediaSpektor** are documented in this file.
+All notable changes to **MediaSpecter** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v2.0.0] - 2026-06-14
+
+### Changed
+- **Renamed MediaSpektor → MediaSpecter.** Same project, cleaner spelling that leans into the ghost theme. The rename is comprehensive: UI wordmark, PWA name/icons, module/file names, logger, and docs.
+
+### Breaking
+- **The Docker image moved to `ghcr.io/gillberg1111/mediaspecter`** (and the repo/Unraid CA template renamed). Existing installs must re-point to the new image; the old `…/mediaspektor` image is no longer updated.
+
+### Migration
+- On startup the app automatically renames an existing `mediaspektor.db` to `mediaspecter.db` in the config directory, so your archived state and rollup badges carry over with no manual steps. `config.yaml` is unchanged.
+
 ## [v1.5.0] - 2026-06-14
 
 ### Added
-- **Season & series "rollup" badges.** When a finished season is fully Spektored, its **season poster** gets the `ARCHIVED • X GB SAVED` badge; when an **ended** series (per Sonarr) has every season fully Spektored, its **series poster** is badged too. Badges revert automatically when they stop being true — an episode is restored, or Sonarr flips the show back to *Continuing*. The series itself stays **monitored** in Sonarr (so a revival still gets picked up), and badges propagate to every matched server.
+- **Season & series "rollup" badges.** When a finished season is fully Spectered, its **season poster** gets the `ARCHIVED • X GB SAVED` badge; when an **ended** series (per Sonarr) has every season fully Spectered, its **series poster** is badged too. Badges revert automatically when they stop being true — an episode is restored, or Sonarr flips the show back to *Continuing*. The series itself stays **monitored** in Sonarr (so a revival still gets picked up), and badges propagate to every matched server.
   - Sonarr-gated: a show not found in Sonarr (or no Sonarr configured) keeps its per-episode badges only.
   - Reconciliation runs after archive/restore, on the nightly `--archive` run, on a built-in 6-hour timer, and on demand via a new **"Refresh badges"** button on the dashboard.
   - Original season/series posters are backed up before badging so reverts are exact.
@@ -21,12 +32,12 @@ and this project adheres to a simple `v0.x` release line.
 ## [v1.4.0] - 2026-06-14
 
 ### Added
-- **Spektor an entire season or entire series.** New "Spektor Entire Season" (episodes view) and "Spektor Entire Series" (seasons view) actions archive all episodes at once. The confirm dialog shows the episode count and total size, and **warns when unwatched episodes are included** before you proceed. Honors Dry-Run. (Issue #2)
+- **Specter an entire season or entire series.** New "Specter Entire Season" (episodes view) and "Specter Entire Series" (seasons view) actions archive all episodes at once. The confirm dialog shows the episode count and total size, and **warns when unwatched episodes are included** before you proceed. Honors Dry-Run. (Issue #2)
 - **Sort Movies & TV.** A sleek segmented pill (A–Z ⇄ Z–A · Size ↓ ⇄ Size ↑, default largest-first) sits beside the search box. Series are sorted by total size (summed from their episodes, computed once and cached). (Issue #3)
 
 ### Fixed
 - **Search field stale text / caret jumping to the front.** The Movies/TV search inputs are now hardened (`type="search"`, explicit LTR, autocomplete/autocorrect/autocapitalize/spellcheck off) and the grid re-syncs when the box is cleared. (Issue #4)
-- **Newly Spektored items showed an un-badged poster in Jellyfin/Emby.** The file swap made Jellyfin/Emby re-extract the poster from the dummy video, overwriting the badge uploaded earlier in the run. The badged poster is now re-applied as the final step (after the swap and scan settle), so it sticks. (Issue #5)
+- **Newly Spectered items showed an un-badged poster in Jellyfin/Emby.** The file swap made Jellyfin/Emby re-extract the poster from the dummy video, overwriting the badge uploaded earlier in the run. The badged poster is now re-applied as the final step (after the swap and scan settle), so it sticks. (Issue #5)
 
 ## [v1.3.1] - 2026-06-14
 
@@ -46,7 +57,7 @@ and this project adheres to a simple `v0.x` release line.
 
 ### Fixed
 - **Radarr/Sonarr were often not unmonitored after archiving.** The match required the media-server file path to start with the *Arr's folder path, which silently failed whenever Radarr/Sonarr mount the library at a different root (e.g. `/movies/…` vs `/data/movies/…`). Matching is now robust:
-  - **Radarr** matches by TMDB id, then IMDB id (using the IDs MediaSpektor already resolves), then path prefix, shared folder-leaf, or movie-file basename.
+  - **Radarr** matches by TMDB id, then IMDB id (using the IDs MediaSpecter already resolves), then path prefix, shared folder-leaf, or movie-file basename.
   - **Sonarr** matches the series by TVDB/IMDB id, path prefix, or series folder-leaf, and the episode file by full path *or* filename.
   - On a miss, the log now says how many movies/series were checked and suggests setting a TMDB key for ID-based matching.
 
@@ -60,7 +71,7 @@ and this project adheres to a simple `v0.x` release line.
 - README title changed from "Multi-Server Watch State Storage Archiver" to "Multi-Server Watched-Media Storage Reclaimer" — "watch state" wrongly implied watched/unwatched syncing; the tool reclaims disk space from watched media.
 
 ### Note
-- Regenerating a **poster** does not trigger any library scan from MediaSpektor — if your server scans after a poster upload, that's the media server's own behavior.
+- Regenerating a **poster** does not trigger any library scan from MediaSpecter — if your server scans after a poster upload, that's the media server's own behavior.
 
 ## [v1.2.9] - 2026-06-14
 
@@ -68,14 +79,14 @@ and this project adheres to a simple `v0.x` release line.
 - **Dashboard "Total space reclaimed" and item count no longer multi-count.** A movie archived across Plex + Jellyfin + Emby has one DB row per server; the stats summed raw rows, so a single title counted 2–3×. Stats now collapse to one row per physical file (`original_path`) before summing — the movie/show grids already de-duped, now the headline numbers match.
 
 ### Changed
-- Sidebar wordmark now reads **MediaSpektor** ("Media" in white, "Spektor" in ghost-green) to match the login/branding wordmark, instead of just "Spektor".
+- Sidebar wordmark now reads **MediaSpecter** ("Media" in white, "Specter" in ghost-green) to match the login/branding wordmark, instead of just "Specter".
 - Background gradient eased off the all-green look: a faint **spectral indigo** drift pool is mixed in alongside the mint (and a touch of teal), for a more ghostly, less uniformly-green atmosphere.
 
 ## [v1.2.8] - 2026-06-14
 
 ### Fixed
 - **Jellyfin & Emby poster uploads returned HTTP 500.** Their `POST /Items/{id}/Images/Primary` endpoint expects the image body **Base64-encoded** (the `Content-Type` header carries the real MIME type); we were sending raw bytes. Affected both archival and "Fix Poster" regeneration — Plex was unaffected.
-- **Activity log showed every line twice.** The in-memory log handler was attached to both the `mediaspektor` logger and the root logger it propagates to, capturing each record twice. Now attached to root only.
+- **Activity log showed every line twice.** The in-memory log handler was attached to both the `mediaspecter` logger and the root logger it propagates to, capturing each record twice. Now attached to root only.
 
 ### Changed
 - Poster overlay now draws a mint **border frame** around the whole poster (not just the banner's top edge), so the archived state reads at a glance.
@@ -100,7 +111,7 @@ and this project adheres to a simple `v0.x` release line.
 ## [v1.2.5] - 2026-06-14
 
 ### Fixed
-- **CRITICAL data-loss fix:** The single-item "Confirm Spektor" archive (the dashboard button) ignored the `safety.dry_run` switch entirely — it swapped the real media file for a dummy even with Dry-Run enabled, irreversibly destroying originals when `backup_original_media` was off. The manual archive now honors Dry-Run exactly like the scheduled run: it logs `[DRY-RUN] Would Spektor…` and changes nothing.
+- **CRITICAL data-loss fix:** The single-item "Confirm Specter" archive (the dashboard button) ignored the `safety.dry_run` switch entirely — it swapped the real media file for a dummy even with Dry-Run enabled, irreversibly destroying originals when `backup_original_media` was off. The manual archive now honors Dry-Run exactly like the scheduled run: it logs `[DRY-RUN] Would Specter…` and changes nothing.
 - Added a data-safety guard to the "Fix Video" regeneration: it now refuses to run unless the item's status is `archived` **and** the on-disk file is small enough to be a dummy (≤ 50 MB), so it can never overwrite real media (it writes in place with no backup).
 - Failure notifications used an unhandled `"danger"` toast type and rendered as a green success checkmark with no error styling — real errors looked like successes. Corrected to the styled `error` type.
 - The "Fix Poster" / "Fix Video" buttons used an undefined `btn-info` CSS class and rendered unstyled; restyled with the existing `btn-secondary`.
@@ -186,7 +197,7 @@ First stable public release — published to the Unraid Community Applications c
 ### Added
 - **MIT License.**
 
-MediaSpektor is now feature-complete for 1.0: multi-server archive propagation across Plex/Jellyfin/Emby with an optional TMDB ID bridge, a single-accent "ghost" brand identity, installable PWA, Dockerized with CI-published GHCR images, atomic data-safe archiving, and a mint-accented poster overlay.
+MediaSpecter is now feature-complete for 1.0: multi-server archive propagation across Plex/Jellyfin/Emby with an optional TMDB ID bridge, a single-accent "ghost" brand identity, installable PWA, Dockerized with CI-published GHCR images, atomic data-safe archiving, and a mint-accented poster overlay.
 
 ## [v0.11] - 2026-06-13
 
@@ -196,10 +207,10 @@ MediaSpektor is now feature-complete for 1.0: multi-server archive propagation a
 ## [v0.10] - 2026-06-13
 
 ### Added
-- **PWA / Add to Home Screen** — added a web manifest, brand icon set (180×180 apple-touch-icon, 192/512 maskable PNGs, SVG favicon), and the iOS/Android meta tags, so MediaSpektor installs with the correct ghost icon on iPhone and Android.
+- **PWA / Add to Home Screen** — added a web manifest, brand icon set (180×180 apple-touch-icon, 192/512 maskable PNGs, SVG favicon), and the iOS/Android meta tags, so MediaSpecter installs with the correct ghost icon on iPhone and Android.
 
 ### Changed
-- **Rebranded the dummy replacement videos.** The `.mp4`/`.mkv`/`.avi` stubs that replace archived media now show the current identity — the mint ghost glyph + Media·Spektor wordmark on near-black — instead of the old purple ghost. Regenerated by `scratch/generate_dummy_videos.py` (and much smaller: the `.avi` dropped from ~137 KB to ~15 KB).
+- **Rebranded the dummy replacement videos.** The `.mp4`/`.mkv`/`.avi` stubs that replace archived media now show the current identity — the mint ghost glyph + Media·Specter wordmark on near-black — instead of the old purple ghost. Regenerated by `scratch/generate_dummy_videos.py` (and much smaller: the `.avi` dropped from ~137 KB to ~15 KB).
 
 ### Removed
 - Deleted the unused legacy logo assets (`static/logo.svg`, `logo_32/64/128/512.png`) and the old asset/build scripts now that the brand assets and a single generator replace them. Build artifacts under `scratch/videos/` are git-ignored.
@@ -208,7 +219,7 @@ MediaSpektor is now feature-complete for 1.0: multi-server archive propagation a
 
 ### Added
 - **Docker image + CI** — a `Dockerfile`, `requirements.txt`, and a GitHub Action that tests, builds, and publishes a multi-arch (amd64/arm64) image to GHCR on every push to `main` and every `vX.Y` tag. Intended to run on Unraid alongside Plex/Jellyfin/Emby with the media share mounted at the same `/data` path. README gains a **Deploy on Unraid (Docker)** section.
-- **Brand system** — adopted the MediaSpektor style guide: new ghost logo assets (sidebar icon + SVG favicon), the `Media`(white) + `Spektor`(ghost-green) wordmark, and the "ghost" highlight rule in brand copy.
+- **Brand system** — adopted the MediaSpecter style guide: new ghost logo assets (sidebar icon + SVG favicon), the `Media`(white) + `Specter`(ghost-green) wordmark, and the "ghost" highlight rule in brand copy.
 
 ### Changed
 - **Full UI redesign.** Reworked layout (hero-led dashboard, cinematic poster-forward media cards, refined sidebar/header), single mint accent (`#3ECF8E`) on near-black per the style guide, Space Grotesk + JetBrains Mono typography, ambient background glow with subtle drift, and tasteful frosted-glass surfaces. New tagline: "Reclaim your space. Keep your library. *A ghost of what you watched.*"
@@ -219,7 +230,7 @@ MediaSpektor is now feature-complete for 1.0: multi-server archive propagation a
 ## [v0.8] - 2026-06-13
 
 ### Fixed
-- **Spektor/Restore 422** — `/api/spektor` and `/api/restore` no longer reject Plex items. `ActionReq.item_id` now accepts numeric ids (Plex ratingKeys arrive as JSON numbers) and coerces them to strings.
+- **Specter/Restore 422** — `/api/specter` and `/api/restore` no longer reject Plex items. `ActionReq.item_id` now accepts numeric ids (Plex ratingKeys arrive as JSON numbers) and coerces them to strings.
 - **Duplicate movies/shows** — when multiple servers point at one shared library, `/api/movies` and `/api/shows` now dedupe across servers (movies by file path → title+year, shows by title+year), keeping one card and preferring an already-archived one.
 - **Emby showed nothing** — `EmbyConnector` now resolves the configured `user_id` (a username *or* a GUID) to the real user GUID via Emby's `/Users` list at startup, so user-scoped queries stop 500-ing.
 - **Library-name matching** — Jellyfin/Emby library lookups are now case-insensitive and log the available library names on a miss, so a configured name that doesn't match is never silent.
@@ -254,7 +265,7 @@ MediaSpektor is now feature-complete for 1.0: multi-server archive propagation a
 - **Test coverage** — Added `test_poster_proxy` validating Plex string→int ID conversion, the `200` response, and the `Cache-Control` header.
 
 ### Changed
-- Cache is force-refreshed (bypassed) on the manual **Refresh** button, after a **Spektor/Restore** action completes, and both lists are cleared when **settings are saved successfully**, so updated library status is immediately visible.
+- Cache is force-refreshed (bypassed) on the manual **Refresh** button, after a **Specter/Restore** action completes, and both lists are cleared when **settings are saved successfully**, so updated library status is immediately visible.
 
 ## [v0.5]
 
@@ -287,4 +298,4 @@ MediaSpektor is now feature-complete for 1.0: multi-server archive propagation a
 ## [v0.1]
 
 ### Added
-- Initial release: MediaSpektor self-hosted watch-state storage archiver dashboard, with Plex/Jellyfin/Emby connectors, SQLite state tracking, Pillow poster overlays, Radarr/Sonarr integration, dummy-video generation, and a FastAPI web dashboard.
+- Initial release: MediaSpecter self-hosted watch-state storage archiver dashboard, with Plex/Jellyfin/Emby connectors, SQLite state tracking, Pillow poster overlays, Radarr/Sonarr integration, dummy-video generation, and a FastAPI web dashboard.

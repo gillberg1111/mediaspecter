@@ -1,4 +1,4 @@
-# MediaSpektor Configuration
+# MediaSpecter Configuration
 servers:
   - type: "plex"
     enabled: true

@@ -1,4 +1,4 @@
-# MediaSpektor — container image (intended to run on Unraid alongside Plex/Jellyfin/Emby)
+# MediaSpecter — container image (intended to run on Unraid alongside Plex/Jellyfin/Emby)
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
