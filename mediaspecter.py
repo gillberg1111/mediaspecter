@@ -15,6 +15,7 @@ import shutil
 import sqlite3
 import struct
 import sys
+import re as _re_mod
 import tempfile
 import time
 from abc import ABC, abstractmethod
@@ -105,6 +106,13 @@ def _titles_match(a: str | None, b: str | None, year_a=None, year_b=None) -> boo
     if year_a is not None and year_b is not None and year_a != year_b:
         return False
     return True
+
+
+_SAFE_COMPONENT_RE = _re_mod.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _safe_component(value) -> str:
+    return _SAFE_COMPONENT_RE.sub("_", str(value))[:128] or "x"
 
 
 # ---------------------------------------------------------------------------
@@ -908,6 +916,19 @@ class PlexConnector(BaseMediaServer):
                 logger.error("Plex get_shows error: %s", exc)
         return results
 
+    def get_show(self, show_id: str) -> dict[str, Any] | None:
+        try:
+            item = self._server.fetchItem(self._resolve_id(show_id))
+            return {
+                "id": item.ratingKey,
+                "title": item.title,
+                "year": item.year,
+                "external_ids": _plex_external_ids(getattr(item, "guids", None)),
+            }
+        except Exception as exc:
+            logger.error("Plex get_show error: %s", exc)
+            return None
+
     def get_seasons(self, show_id: str) -> list[dict[str, Any]]:
         results = []
         try:
@@ -1365,6 +1386,22 @@ class JellyfinConnector(BaseMediaServer):
                 logger.error("Jellyfin get_shows from '%s': %s", lib_name, exc)
         return results
 
+    def get_show(self, show_id: str) -> dict[str, Any] | None:
+        try:
+            self._ensure_auth()
+            resp = self._get(f"/Users/{self.user_id}/Items/{show_id}",
+                             params={"Fields": "ProviderIds,ProductionYear"})
+            item = resp.json()
+            return {
+                "id": item["Id"],
+                "title": item.get("Name", "Unknown"),
+                "year": item.get("ProductionYear"),
+                "external_ids": _provider_external_ids(item.get("ProviderIds", {})),
+            }
+        except Exception as exc:
+            logger.error("Jellyfin get_show error: %s", exc)
+            return None
+
     def get_seasons(self, show_id: str) -> list[dict[str, Any]]:
         results = []
         try:
@@ -1774,6 +1811,21 @@ class EmbyConnector(BaseMediaServer):
             except Exception as exc:
                 logger.error("Emby get_shows from '%s': %s", lib_name, exc)
         return results
+
+    def get_show(self, show_id: str) -> dict[str, Any] | None:
+        try:
+            resp = self._get(f"/Users/{self.user_id}/Items/{show_id}",
+                             params={"Fields": "ProviderIds,ProductionYear"})
+            item = resp.json()
+            return {
+                "id": item["Id"],
+                "title": item.get("Name", "Unknown"),
+                "year": item.get("ProductionYear"),
+                "external_ids": _provider_external_ids(item.get("ProviderIds", {})),
+            }
+        except Exception as exc:
+            logger.error("Emby get_show error: %s", exc)
+            return None
 
     def get_seasons(self, show_id: str) -> list[dict[str, Any]]:
         results = []
@@ -2283,6 +2335,11 @@ class MediaSpecter:
         tmdb_key = integrations.get("tmdb", {}).get("api_key", "") or os.environ.get("TMDB_API_KEY", "")
         self.tmdb = TmdbClient(tmdb_key)
 
+    def _new_poster_tmp(self) -> str:
+        fd, path = tempfile.mkstemp(prefix="ms_poster_", suffix=".jpg", dir=str(self.backup_dir))
+        os.close(fd)
+        return path
+
     def _create_connector(
         self, cfg: dict
     ) -> BaseMediaServer | None:
@@ -2470,12 +2527,12 @@ class MediaSpecter:
 
                 try:
                     # 1. Download poster
-                    poster_tmp = f"/tmp/mediaspecter_poster_{item_id}.jpg"
+                    poster_tmp = self._new_poster_tmp()
                     if server.download_poster(item_id, poster_tmp):
                         # Backup original poster
                         poster_backup = (
                             self.backup_dir
-                            / f"{server.server_type}_{item_id}_poster_original.jpg"
+                            / f"{_safe_component(server.server_type)}_{_safe_component(item_id)}_poster_original.jpg"
                         )
                         shutil.copy2(poster_tmp, str(poster_backup))
                         backup_poster_path = str(poster_backup)
@@ -2483,7 +2540,7 @@ class MediaSpecter:
                         # Apply overlay
                         poster_overlay = (
                             self.backup_dir
-                            / f"{server.server_type}_{item_id}_poster_overlay.jpg"
+                            / f"{_safe_component(server.server_type)}_{_safe_component(item_id)}_poster_overlay.jpg"
                         )
                         self.overlay.apply_overlay(
                             poster_tmp, str(poster_overlay), gb_saved
@@ -2507,7 +2564,7 @@ class MediaSpecter:
                     # (bad path / permissions) never destroys the original.
                     dummy_bytes = base64.b64decode(dummy_base64)
                     backup_target = (
-                        str(self.backup_dir / f"{server.server_type}_{item_id}{ext}")
+                        str(self.backup_dir / f"{_safe_component(server.server_type)}_{_safe_component(item_id)}{ext}")
                         if self.config.get("safety", {}).get("backup_original_media", False)
                         else None
                     )
@@ -2666,7 +2723,7 @@ class MediaSpecter:
                 if not server:
                     continue
 
-                poster_overlay = self.backup_dir / f"{srv_type}_{srv_id}_poster_overlay.jpg"
+                poster_overlay = self.backup_dir / f"{_safe_component(srv_type)}_{_safe_component(srv_id)}_poster_overlay.jpg"
                 if self.overlay.apply_overlay(backup_poster, str(poster_overlay), gb_saved):
                     if server.upload_poster(srv_id, str(poster_overlay)):
                         success_count += 1
@@ -2812,17 +2869,30 @@ class MediaSpecter:
                 total += max(0, (row.get("original_size_bytes", 0) or 0) - (row.get("dummy_size_bytes", 0) or 0))
         return total
 
-    def _apply_rollup_badge(self, server, item_id, kind, should_badge, saved_bytes, results):
+    def _apply_rollup_badge(self, server, item_id, kind, should_badge, saved_bytes, results, force=False):
         existing = self.db.get_rollup_badge(server.server_type, str(item_id))
         gb = saved_bytes / (1024 ** 3)
         try:
-            if should_badge and not existing:
-                tmp = f"/tmp/ms_rollup_{server.server_type}_{item_id}.jpg"
+            if should_badge and (not existing or force):
+                if existing and force:
+                    # Re-upload stored overlay; re-download if missing
+                    overlay = self.backup_dir / f"{_safe_component(server.server_type)}_{_safe_component(item_id)}_{kind}_overlay.jpg"
+                    if not overlay.exists():
+                        tmp = self._new_poster_tmp()
+                        if not server.download_poster(str(item_id), tmp):
+                            return
+                        self.overlay.apply_overlay(tmp, str(overlay), gb)
+                        if os.path.exists(tmp):
+                            os.unlink(tmp)
+                    if overlay.exists() and server.upload_poster(str(item_id), str(overlay)):
+                        results["badged"].append(f"{server.server_type}:{kind}:{item_id}")
+                    return
+                tmp = self._new_poster_tmp()
                 if not server.download_poster(str(item_id), tmp):
                     return
-                backup = self.backup_dir / f"{server.server_type}_{item_id}_{kind}_original.jpg"
+                backup = self.backup_dir / f"{_safe_component(server.server_type)}_{_safe_component(item_id)}_{kind}_original.jpg"
                 shutil.copy2(tmp, str(backup))
-                overlay = self.backup_dir / f"{server.server_type}_{item_id}_{kind}_overlay.jpg"
+                overlay = self.backup_dir / f"{_safe_component(server.server_type)}_{_safe_component(item_id)}_{kind}_overlay.jpg"
                 self.overlay.apply_overlay(tmp, str(overlay), gb)
                 if server.upload_poster(str(item_id), str(overlay)):
                     self.db.add_rollup_badge(server.server_type, item_id, kind, str(backup))
@@ -2836,6 +2906,36 @@ class MediaSpecter:
                 results["unbadged"].append(f"{server.server_type}:{kind}:{item_id}")
         except Exception as exc:
             results["errors"].append(f"{server.server_type}:{kind}:{item_id}: {exc}")
+
+    def _reconcile_show(self, server, show, results, force=False, only_season=None):
+        series = self.sonarr.find_series(show.get("external_ids"), show.get("title"), show.get("year"))
+        if not series:
+            return
+        sonarr_eps = self.sonarr.get_series_episodes(series["id"])
+        series_ended = (series.get("status") == "ended") or bool(series.get("ended"))
+        seasons = server.get_seasons(show["id"])
+        all_archived, any_archived, series_saved = True, False, 0
+        for season in seasons:
+            snum = season.get("season_number")
+            if not snum or snum == 0:
+                continue
+            if only_season is not None and only_season != snum:
+                continue
+            eps = server.get_episodes(show["id"], season["id"])
+            if not eps:
+                all_archived = False
+                continue
+            archived_ids = [str(e["id"]) for e in eps if self.db.item_exists(server.server_type, str(e["id"]))]
+            season_full = len(archived_ids) == len(eps)
+            saved = self._saved_bytes_for(server.server_type, archived_ids)
+            series_saved += saved
+            if archived_ids: any_archived = True
+            if not season_full: all_archived = False
+            should = season_full and self._sonarr_season_ended(sonarr_eps, snum)
+            self._apply_rollup_badge(server, season["id"], "season", should, saved, results, force=force)
+        if only_season is None:
+            should_series = any_archived and all_archived and series_ended
+            self._apply_rollup_badge(server, show["id"], "series", should_series, series_saved, results, force=force)
 
     def reconcile_rollup_badges(self) -> dict[str, Any]:
         """Badge/un-badge season & series posters for fully-archived, ended seasons/series.
@@ -2852,37 +2952,27 @@ class MediaSpecter:
                 libs = server.config.get("libraries", [])
                 for show in server.get_shows(libs):
                     try:
-                        series = self.sonarr.find_series(show.get("external_ids"), show.get("title"), show.get("year"))
-                        if not series:
-                            continue
-                        sonarr_eps = self.sonarr.get_series_episodes(series["id"])
-                        series_ended = (series.get("status") == "ended") or bool(series.get("ended"))
-                        seasons = server.get_seasons(show["id"])
-                        all_archived, any_archived, series_saved = True, False, 0
-                        for season in seasons:
-                            snum = season.get("season_number")
-                            if not snum or snum == 0:
-                                continue
-                            eps = server.get_episodes(show["id"], season["id"])
-                            if not eps:
-                                all_archived = False
-                                continue
-                            archived_ids = [str(e["id"]) for e in eps if self.db.item_exists(server.server_type, str(e["id"]))]
-                            season_full = len(archived_ids) == len(eps)
-                            saved = self._saved_bytes_for(server.server_type, archived_ids)
-                            series_saved += saved
-                            if archived_ids: any_archived = True
-                            if not season_full: all_archived = False
-                            should = season_full and self._sonarr_season_ended(sonarr_eps, snum)
-                            self._apply_rollup_badge(server, season["id"], "season", should, saved, results)
-                        should_series = any_archived and all_archived and series_ended
-                        self._apply_rollup_badge(server, show["id"], "series", should_series, series_saved, results)
+                        self._reconcile_show(server, show, results)
                     except Exception as exc:
                         results["errors"].append(f"{server.server_type}:{show.get('id')}: {exc}")
         finally:
             _RECONCILE_LOCK.release()
         logger.info("Rollup reconcile: %d badged, %d unbadged, %d errors",
                     len(results["badged"]), len(results["unbadged"]), len(results["errors"]))
+        return results
+
+    def fix_rollup(self, server_type: str, show_id: str, only_season: int | None = None) -> dict:
+        server = next((s for s in self.servers if s.server_type == server_type), None)
+        if not server:
+            return {"error": f"No active {server_type} server."}
+        show = server.get_show(show_id)
+        if not show:
+            return {"error": "Show not found."}
+        show["external_ids"] = show.get("external_ids") or {}
+        results = {"badged": [], "unbadged": [], "errors": []}
+        if not self.sonarr:
+            return {"error": "Sonarr not configured."}
+        self._reconcile_show(server, show, results, force=True, only_season=only_season)
         return results
 
     def _replace_with_dummy(
@@ -2939,7 +3029,7 @@ class MediaSpecter:
             raise
         return backup_media_path
 
-    def archive_item(self, server_type: str, item_id: str) -> dict[str, Any]:
+    def archive_item(self, server_type: str, item_id: str, skip_scan: bool = False) -> dict[str, Any]:
         """Archive a single chosen movie or episode, propagating to all servers."""
         results: dict[str, Any] = {"success": False, "error": None, "warnings": []}
 
@@ -3017,13 +3107,13 @@ class MediaSpecter:
                 local_type = server.server_type
                 backup_poster_path: str | None = None
                 try:
-                    poster_tmp = f"/tmp/mediaspecter_poster_{local_type}_{local_id}.jpg"
+                    poster_tmp = self._new_poster_tmp()
                     if server.download_poster(local_id, poster_tmp):
-                        poster_backup = self.backup_dir / f"{local_type}_{local_id}_poster_original.jpg"
+                        poster_backup = self.backup_dir / f"{_safe_component(local_type)}_{_safe_component(local_id)}_poster_original.jpg"
                         shutil.copy2(poster_tmp, str(poster_backup))
                         backup_poster_path = str(poster_backup)
 
-                        poster_overlay = self.backup_dir / f"{local_type}_{local_id}_poster_overlay.jpg"
+                        poster_overlay = self.backup_dir / f"{_safe_component(local_type)}_{_safe_component(local_id)}_poster_overlay.jpg"
                         self.overlay.apply_overlay(poster_tmp, str(poster_overlay), gb_saved)
 
                         if not server.upload_poster(local_id, str(poster_overlay)):
@@ -3039,7 +3129,7 @@ class MediaSpecter:
             # PHASE 2 — swap the physical file exactly once. Pre-flight checks abort
             # before any delete; on failure, roll the posters back to the originals.
             backup_target = (
-                str(self.backup_dir / f"{server_type}_{item_id}{ext}")
+                str(self.backup_dir / f"{_safe_component(server_type)}_{_safe_component(item_id)}{ext}")
                 if self.config.get("safety", {}).get("backup_original_media", False)
                 else None
             )
@@ -3073,10 +3163,11 @@ class MediaSpecter:
                     backup_media_path=backup_media_path if server is source else None,
                     status="archived",
                 )
-                try:
-                    server.trigger_library_scan(media_type=media_type, item_id=t["local_id"])
-                except Exception as exc:
-                    logger.warning("Library scan failed for %s: %s", server.server_type, exc)
+                if not skip_scan:
+                    try:
+                        server.trigger_library_scan(media_type=media_type, item_id=t["local_id"])
+                    except Exception as exc:
+                        logger.warning("Library scan failed for %s: %s", server.server_type, exc)
 
             # PHASE 4 — re-apply the badged poster LAST. The file swap makes Jellyfin/Emby
             # re-extract the Primary image from the dummy video, clobbering the PHASE-1 upload;
@@ -3085,7 +3176,7 @@ class MediaSpecter:
                 srv = t["server"]
                 if srv.server_type not in ("jellyfin", "emby"):
                     continue
-                overlay = self.backup_dir / f"{srv.server_type}_{t['local_id']}_poster_overlay.jpg"
+                overlay = self.backup_dir / f"{_safe_component(srv.server_type)}_{_safe_component(t['local_id'])}_poster_overlay.jpg"
                 if not overlay.exists():
                     continue
                 try:
@@ -3134,11 +3225,17 @@ class MediaSpecter:
         """Archive each episode id via archive_item (honors Dry-Run, propagation, etc.)."""
         results = {"archived": [], "errors": []}
         for iid in item_ids:
-            res = self.archive_item(server_type, str(iid))
+            res = self.archive_item(server_type, str(iid), skip_scan=True)
             if res.get("success"):
                 results["archived"].append(iid)
             else:
                 results["errors"].append({"item_id": iid, "error": res.get("error")})
+        if results["archived"]:
+            for server in self.servers:
+                try:
+                    server.trigger_library_scan(media_type="episode")
+                except Exception as exc:
+                    logger.warning("Final batch scan failed on %s: %s", server.server_type, exc)
         return results
 
 
@@ -3542,6 +3639,22 @@ def run_bg_reconcile():
 def trigger_reconcile(bg_tasks: BackgroundTasks):
     bg_tasks.add_task(run_bg_reconcile)
     return {"success": True, "message": "Badge reconciliation queued."}
+
+class FixRollupReq(BaseModel):
+    server_type: str
+    show_id: str
+    season_number: int | None = None
+
+def run_bg_fix_rollup(server_type: str, show_id: str, season_number: int | None = None):
+    try:
+        get_specter().fix_rollup(server_type, show_id, season_number)
+    except Exception as exc:
+        logger.error("fix_rollup failed: %s", exc)
+
+@app.post("/api/fix-rollup", dependencies=[Depends(verify_auth)])
+def trigger_fix_rollup(req: FixRollupReq, bg_tasks: BackgroundTasks):
+    bg_tasks.add_task(run_bg_fix_rollup, req.server_type, req.show_id, req.season_number)
+    return {"success": True, "message": "Rollup poster fix queued."}
 
 @app.post("/api/restore", dependencies=[Depends(verify_auth)])
 def trigger_restore(req: ActionReq, bg_tasks: BackgroundTasks):

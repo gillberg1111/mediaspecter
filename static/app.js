@@ -473,6 +473,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span>${movie.year || ""}</span>
                         <span>${sizeFormatted}</span>
                     </div>
+                    <span class="watch-dot ${movie.is_watched ? 'watched' : ''}">${movie.is_watched ? 'Watched' : 'Unwatched'}</span>
                 </div>
             `;
             
@@ -560,6 +561,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span>${show.year || ""}</span>
                         <span>${show.server_type.toUpperCase()}</span>
                     </div>
+                    <span class="watch-dot ${show.is_watched ? 'watched' : ''}">${show.is_watched ? 'Watched' : 'Unwatched'}</span>
                 </div>
             `;
             
@@ -627,6 +629,11 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.dataset.showId = showId;
             btn.dataset.showTitle = showTitle;
         }
+        const fixBtn = document.getElementById("btn-fix-series-poster");
+        if (fixBtn) {
+            fixBtn.dataset.serverType = serverType;
+            fixBtn.dataset.showId = showId;
+        }
         const grid = document.getElementById("seasons-grid");
         grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
         
@@ -647,13 +654,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         </div>
                         <div class="season-info">
                             <div class="season-title">${season.title}</div>
+                            <span class="watch-dot ${season.is_watched ? 'watched' : ''}">${season.is_watched ? 'Watched' : 'Unwatched'}</span>
                         </div>
                     `;
                     
                     // Click Season -> Load Episodes
                     card.addEventListener("click", () => {
                         closeModal(modalSeasons);
-                        openEpisodesModal(serverType, showId, showTitle, season.id, season.title);
+                        openEpisodesModal(serverType, showId, showTitle, season.id, season.title, season.season_number);
                     });
                     
                     grid.appendChild(card);
@@ -666,7 +674,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Season Episodes Table Navigation
-    function openEpisodesModal(serverType, showId, showTitle, seasonId, seasonTitle) {
+    function openEpisodesModal(serverType, showId, showTitle, seasonId, seasonTitle, seasonNumber) {
         document.getElementById("episodes-title").textContent = `${showTitle} — ${seasonTitle}`;
         const btn = document.getElementById("btn-bulk-season");
         if (btn) {
@@ -675,9 +683,16 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.dataset.showTitle = showTitle;
             btn.dataset.seasonId = seasonId;
             btn.dataset.seasonTitle = seasonTitle;
+            btn.dataset.seasonNumber = seasonNumber;
+        }
+        const fixBtn = document.getElementById("btn-fix-season-poster");
+        if (fixBtn) {
+            fixBtn.dataset.serverType = serverType;
+            fixBtn.dataset.showId = showId;
+            fixBtn.dataset.seasonNumber = seasonNumber;
         }
         const list = document.getElementById("episodes-list");
-        list.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></td></tr>';
+        list.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></td></tr>';
         
         openModal(modalEpisodes);
 
@@ -686,7 +701,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .then(episodes => {
                 list.innerHTML = "";
                 if (episodes.length === 0) {
-                    list.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No watched episodes found in this season.</td></tr>';
+                    list.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No watched episodes found in this season.</td></tr>';
                     return;
                 }
                 
@@ -697,6 +712,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     let actionButton = "";
                     if (ep.status === "archived") {
                         actionButton = `<button class="btn btn-success btn-xs" onclick="window.triggerEpisodeAction('restore', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-rotate-left"></i> Restore</button>`;
+                        actionButton += ` <button class="btn btn-secondary btn-xs" onclick="window.executeRegenerateFor('${serverType}','${ep.id}','poster')"><i class="fa-solid fa-image"></i></button>`
+                                     + ` <button class="btn btn-secondary btn-xs" onclick="window.executeRegenerateFor('${serverType}','${ep.id}','video')"><i class="fa-solid fa-video"></i></button>`;
                     } else {
                         actionButton = `<button class="btn btn-primary btn-xs" onclick="window.triggerEpisodeAction('specter', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-ghost"></i> Specter</button>`;
                     }
@@ -705,6 +722,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <td>${ep.episode_number}</td>
                         <td>${ep.title}</td>
                         <td>${sizeFormatted}</td>
+                        <td><span class="watch-dot ${ep.is_watched ? 'watched' : ''}">${ep.is_watched ? 'Watched' : 'Unwatched'}</span></td>
                         <td><span class="media-badge ${ep.status}" style="position: static; display: inline-block;">${ep.status.toUpperCase()}</span></td>
                         <td>${actionButton}</td>
                     `;
@@ -713,7 +731,7 @@ document.addEventListener("DOMContentLoaded", () => {
             })
             .catch(err => {
                 console.error("Failed to load episodes:", err);
-                list.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger);">Failed to load episodes.</td></tr>';
+                list.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger);">Failed to load episodes.</td></tr>';
             });
     }
 
@@ -878,6 +896,14 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Regeneration error:", err);
             showToast("Server error during regeneration request.", "error");
         });
+    };
+
+    window.executeRegenerateFor = (serverType, itemId, target) => {
+        showToast(`Queued ${target} fix…`, "warning");
+        fetch("/api/regenerate", { method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ server_type: serverType, item_id: itemId, target }) })
+          .then(r=>r.json()).then(d=> showToast(d.success ? "Fix queued." : ("Error: "+(d.error||"failed")), d.success?"success":"error"))
+          .catch(()=> showToast("Server error.", "error"));
     };
 
     // -----------------------------------------------------------------------
@@ -1128,6 +1154,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (!btn) return;
         window.bulkSpecter(btn.dataset.serverType, btn.dataset.showId, seasonId, label);
+    };
+
+    window.fixRollup = (type) => {
+        const btn = document.getElementById(type === 'series' ? 'btn-fix-series-poster' : 'btn-fix-season-poster');
+        if (!btn) return;
+        const body = { server_type: btn.dataset.serverType, show_id: btn.dataset.showId,
+                       season_number: type === 'season' ? Number(btn.dataset.seasonNumber || NaN) || null : null };
+        showToast("Queued rollup poster fix…", "warning");
+        fetch("/api/fix-rollup", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) })
+          .then(r=>r.json()).then(d=> showToast(d.success ? "Fix queued." : ("Error: "+(d.error||"failed")), d.success?"success":"error"))
+          .catch(()=> showToast("Server error.", "error"));
     };
 
     // -----------------------------------------------------------------------

@@ -57,6 +57,10 @@
                 <div class="footer-stats">
                     <span class="status-indicator online"></span> Ready
                 </div>
+                <a href="https://buymeacoffee.com/gillberg1111" target="_blank" rel="noopener"
+                   class="btn btn-coffee btn-xs" style="width:100%; border-radius:8px; justify-content:center;">
+                    <span aria-hidden="true">☕</span> Buy me a coffee
+                </a>
                 <button id="btn-logout" class="btn btn-secondary btn-xs" style="width: 100%; border-radius: 8px;">
                     <i class="fa-solid fa-right-from-bracket"></i> Logout
                 </button>
@@ -117,7 +121,7 @@
                     </div>
                 </div>
                 <div class="version-footer">
-                    MediaSpecter v2.0.0
+                    MediaSpecter v2.1.0
                 </div>
             </section>
 
@@ -136,7 +140,7 @@
                     <!-- Cards injected here -->
                 </div>
                 <div class="version-footer">
-                    MediaSpecter v2.0.0
+                    MediaSpecter v2.1.0
                 </div>
             </section>
 
@@ -155,7 +159,7 @@
                     <!-- Cards injected here -->
                 </div>
                 <div class="version-footer">
-                    MediaSpecter v2.0.0
+                    MediaSpecter v2.1.0
                 </div>
             </section>
 
@@ -461,7 +465,7 @@
                     </div>
                 </form>
                 <div class="version-footer">
-                    MediaSpecter v2.0.0
+                    MediaSpecter v2.1.0
                 </div>
             </section>
         </main>
@@ -476,6 +480,7 @@
             <div class="modal-header">
                 <h2 id="seasons-title">Show Seasons</h2>
                 <button id="btn-bulk-series" class="btn btn-primary btn-xs" onclick="window.bulkSpecterHandler('series')"><i class="fa-solid fa-ghost"></i> Specter Entire Series</button>
+                <button id="btn-fix-series-poster" class="btn btn-secondary btn-xs" onclick="window.fixRollup('series')"><i class="fa-solid fa-image"></i> Fix Series Poster</button>
             </div>
             <div class="modal-body">
                 <div id="seasons-grid" class="media-grid">
@@ -492,6 +497,7 @@
             <div class="modal-header">
                 <h2 id="episodes-title">Season Episodes</h2>
                 <button id="btn-bulk-season" class="btn btn-primary btn-xs" onclick="window.bulkSpecterHandler('season')"><i class="fa-solid fa-ghost"></i> Specter Entire Season</button>
+                <button id="btn-fix-season-poster" class="btn btn-secondary btn-xs" onclick="window.fixRollup('season')"><i class="fa-solid fa-image"></i> Fix Season Poster</button>
             </div>
             <div class="modal-body">
                 <div class="table-container">
@@ -501,6 +507,7 @@
                                 <th>Ep</th>
                                 <th>Title</th>
                                 <th>Size</th>
+                                <th>Watched</th>
                                 <th>Status</th>
                                 <th>Action</th>
                             </tr>

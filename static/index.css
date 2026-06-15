@@ -269,6 +269,8 @@ body {
 .btn-danger:hover { background: rgba(229,100,91,0.1); color: var(--red); }
 .btn-lg { padding: 0.8rem 1.5rem; font-size: 0.88rem; }
 .btn-xs { padding: 0.4rem 0.8rem; font-size: 0.74rem; }
+.btn-coffee { color: #04231f; background: var(--accent); border-color: transparent; font-weight: 600; gap: 0.4rem; }
+.btn-coffee:hover { background: #54E2A2; color: #04231f; box-shadow: 0 8px 22px -10px rgba(62,207,142,0.5); }
 
 /* --------------------------------------------------------------------------
    Tabs
@@ -462,6 +464,11 @@ body {
 .media-info { padding: 0.7rem 0.15rem 0; }
 .media-title { font-size: 0.86rem; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .media-meta { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.72rem; color: var(--text-3); margin-top: 0.2rem; }
+.watch-dot { display:inline-flex; align-items:center; gap:0.3rem; font-size:0.66rem; font-weight:600;
+    letter-spacing:0.04em; text-transform:uppercase; color: var(--text-3); }
+.watch-dot::before { content:""; width:7px; height:7px; border-radius:50%; background: var(--text-4); }
+.watch-dot.watched { color: var(--accent); }
+.watch-dot.watched::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 
 /* --------------------------------------------------------------------------
    Settings

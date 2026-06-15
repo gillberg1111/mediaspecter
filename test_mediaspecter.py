@@ -1514,7 +1514,7 @@ class TestBulkArchive(unittest.TestCase):
         self.assertEqual(len(res["errors"]), 0)
 
     def test_bulk_archive_reports_errors(self):
-        def side_effect(st, iid):
+        def side_effect(st, iid, skip_scan=False):
             if iid == "2":
                 return {"success": False, "error": "fail"}
             return {"success": True}
@@ -1842,6 +1842,122 @@ class TestRollupBadges(unittest.TestCase):
         res = self.specter.reconcile_rollup_badges()
         self.assertIn("skipped", res)
         self.assertEqual(res["skipped"], "Sonarr not configured")
+
+
+class TestPhase2(unittest.TestCase):
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self.temp_config = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False)
+        self.temp_config.close()
+        import yaml
+        with open(self.temp_config.name, "w") as f:
+            yaml.safe_dump({"servers": [], "rules": {}, "safety": {"dry_run": True}}, f)
+        self.specter = MediaSpecter(self.temp_config.name)
+        self.specter.db = Database(self.temp_db.name)
+
+    def tearDown(self):
+        import mediaspecter
+        mediaspecter._SHOW_SIZE_CACHE.clear()
+        for p in (self.temp_db.name, self.temp_config.name):
+            if os.path.exists(p):
+                os.unlink(p)
+
+    def test_new_poster_tmp_inside_backup_dir(self):
+        p1 = self.specter._new_poster_tmp()
+        p2 = self.specter._new_poster_tmp()
+        backup_str = str(self.specter.backup_dir)
+        self.assertTrue(p1.startswith(backup_str))
+        self.assertTrue(p2.startswith(backup_str))
+        self.assertNotEqual(p1, p2)
+        self.assertTrue(p1.endswith(".jpg"))
+        self.assertTrue(p2.endswith(".jpg"))
+        for p in (p1, p2):
+            if os.path.exists(p):
+                os.unlink(p)
+
+    def test_safe_component_blocks_path_traversal(self):
+        from mediaspecter import _safe_component
+        result = _safe_component("../../etc/passwd")
+        self.assertNotIn("/", result)
+        self.assertTrue(len(result) > 0)
+
+    def test_bulk_archive_skip_scan(self):
+        mock = MagicMock()
+        mock.server_type = "plex"
+        self.specter.servers = [mock]
+        calls = []
+        def record(server_type, item_id, skip_scan=False):
+            calls.append((server_type, item_id, skip_scan))
+            return {"success": True}
+        self.specter.archive_item = MagicMock(side_effect=record)
+        self.specter.bulk_archive("plex", ["1", "2", "3"])
+        self.assertEqual(len(calls), 3)
+        for _, _, skip_scan in calls:
+            self.assertTrue(skip_scan)
+        mock.trigger_library_scan.assert_called_once_with(media_type="episode")
+
+    def test_get_show_returns_external_ids(self):
+        from mediaspecter import PlexConnector
+        mock_show = MagicMock()
+        mock_show.ratingKey = "99"
+        mock_show.title = "Test"
+        mock_show.year = 2020
+        mock_guid = MagicMock()
+        mock_guid.id = "tvdb://12345"
+        mock_show.guids = [mock_guid]
+        connector = object.__new__(PlexConnector)
+        connector._server = MagicMock()
+        connector._server.fetchItem.return_value = mock_show
+        connector._resolve_id = lambda x: x
+        result = connector.get_show("99")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["id"], "99")
+        self.assertEqual(result["title"], "Test")
+        self.assertEqual(result["year"], 2020)
+        self.assertEqual(result["external_ids"]["tvdb"], "12345")
+
+    def test_fix_rollup_no_sonarr(self):
+        self.specter.sonarr = None
+        mock_srv = MagicMock()
+        mock_srv.server_type = "plex"
+        mock_srv.get_show.return_value = {"id": "s1", "title": "T", "year": 2020, "external_ids": {"tvdb": "1"}}
+        self.specter.servers = [mock_srv]
+        res = self.specter.fix_rollup("plex", "99")
+        self.assertIn("error", res)
+        self.assertEqual(res["error"], "Sonarr not configured.")
+
+    def test_fix_rollup_force_reupload(self):
+        mock = MagicMock()
+        mock.server_type = "plex"
+        mock.config = {"libraries": ["TV"]}
+        show = {"id": "s1", "title": "Test Show", "year": 2020, "external_ids": {"tvdb": "123"}}
+        mock.get_show.return_value = show
+        mock.get_seasons.return_value = [{"id": "sea1", "season_number": 1}]
+        mock.get_episodes.return_value = [{"id": "e1", "original_size": 100_000_000}]
+        mock.download_poster.return_value = True
+        mock.upload_poster.return_value = True
+        self.specter.servers = [mock]
+
+        self.specter.db.insert(
+            server_type="plex", server_item_id="e1", title="E1", media_type="episode",
+            original_path="/tv/e1.mkv", original_size_bytes=100_000_000, dummy_size_bytes=1024,
+            status="archived"
+        )
+        self.specter.db.add_rollup_badge("plex", "sea1", "season", "/backups/old.jpg")
+
+        self.specter.overlay.apply_overlay = MagicMock(return_value=True)
+        self.specter.sonarr = MagicMock()
+        self.specter.sonarr.find_series.return_value = {"id": 10, "status": "ended"}
+        past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.specter.sonarr.get_series_episodes.return_value = [
+            {"seasonNumber": 1, "airDateUtc": past},
+        ]
+
+        with patch("mediaspecter.shutil.copy2"), patch("os.path.exists", return_value=True):
+            res = self.specter.fix_rollup("plex", "s1", only_season=1)
+        self.assertIn("plex:season:sea1", res["badged"])
+        mock.upload_poster.assert_called()
 
 
 if __name__ == "__main__":

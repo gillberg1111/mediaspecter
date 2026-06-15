@@ -5,6 +5,19 @@ All notable changes to **MediaSpecter** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v2.1.0] - 2026-06-14
+
+### Added
+- **Fix Poster / Fix Video for TV (issue #6).** Archived episode rows get **Fix Poster** and **Fix Video** buttons; the seasons and episodes views get **Fix Series Poster** / **Fix Season Poster**, which force re-apply the rollup badge (handy when a server overwrote it). Series/season fixes are Sonarr-gated like the rollup badges themselves.
+- **Watched status everywhere (issue #8).** A mint Watched/Unwatched indicator now shows on movies, shows, season cards, and a new column in the episodes table.
+- **Buy Me A Coffee** button in the sidebar.
+
+### Changed
+- **Far fewer rescans when Spectering a season/series (issue #9).** Bulk archive now skips the per-episode library scan and triggers a single scoped rescan per server once the whole season/series is in place.
+
+### Security
+- **Posters are no longer written to predictable `/tmp` paths.** Temp posters now use `mkstemp` inside the app-owned backup directory (O_EXCL, unpredictable), and item/server ids are sanitized wherever they're embedded in backup filenames — closing a TOCTOU/symlink overwrite risk flagged in review.
+
 ## [v2.0.0] - 2026-06-14
 
 ### Changed
