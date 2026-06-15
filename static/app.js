@@ -7,6 +7,13 @@ document.addEventListener("DOMContentLoaded", () => {
     let logInterval = null;
     let logPaused = false;
 
+    // XSS guards: media titles/paths come from the media servers (and metadata
+    // providers), so treat them as untrusted when building HTML.
+    // esc() = HTML-escape for text/attribute contexts.
+    // jsArg() = safe to embed inside an onclick="" as a JS string literal.
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const jsArg = s => esc(JSON.stringify(String(s ?? '')));
+
     // Global fetch interceptor for authentication
     const originalFetch = window.fetch;
     window.fetch = async function (...args) {
@@ -478,12 +485,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
             card.innerHTML = `
                 <div class="media-badge ${movie.status}">${movie.status.toUpperCase()}</div>
-                ${movie.missing_servers && movie.missing_servers.length ? `<div class="miss-chip" title="Not found on: ${movie.missing_servers.join(', ')}"><i class="fa-solid fa-triangle-exclamation"></i> ${movie.missing_servers.length} server${movie.missing_servers.length>1?'s':''}</div>` : ''}
+                ${movie.missing_servers && movie.missing_servers.length ? `<div class="miss-chip" title="Not found on: ${esc(movie.missing_servers.join(', '))}"><i class="fa-solid fa-triangle-exclamation"></i> ${movie.missing_servers.length} server${movie.missing_servers.length>1?'s':''}</div>` : ''}
                 <div class="media-poster-container">
-                    <img src="${posterUrl}" class="media-poster" alt="${movie.title}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(movie.title)}'">
+                    <img src="${posterUrl}" class="media-poster" alt="${esc(movie.title)}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(movie.title)}'">
                 </div>
                 <div class="media-info">
-                    <div class="media-title" title="${movie.title}">${movie.title}</div>
+                    <div class="media-title" title="${esc(movie.title)}">${esc(movie.title)}</div>
                     <div class="media-meta">
                         <span>${movie.year || ""}</span>
                         <span>${sizeFormatted}</span>
@@ -580,11 +587,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
             card.innerHTML = `
                 <div class="media-poster-container">
-                    <img src="${posterUrl}" class="media-poster" alt="${show.title}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(show.title)}'">
+                    <img src="${posterUrl}" class="media-poster" alt="${esc(show.title)}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(show.title)}'">
                 </div>
-                ${show.missing_servers && show.missing_servers.length ? `<div class="miss-chip" title="Not found on: ${show.missing_servers.join(', ')}"><i class="fa-solid fa-triangle-exclamation"></i> ${show.missing_servers.length} server${show.missing_servers.length>1?'s':''}</div>` : ''}
+                ${show.missing_servers && show.missing_servers.length ? `<div class="miss-chip" title="Not found on: ${esc(show.missing_servers.join(', '))}"><i class="fa-solid fa-triangle-exclamation"></i> ${show.missing_servers.length} server${show.missing_servers.length>1?'s':''}</div>` : ''}
                 <div class="media-info">
-                    <div class="media-title" title="${show.title}">${show.title}</div>
+                    <div class="media-title" title="${esc(show.title)}">${esc(show.title)}</div>
                     <div class="media-meta">
                         <span>${show.year || ""}</span>
                         <span>${show.server_type.toUpperCase()}</span>
@@ -678,10 +685,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     
                     card.innerHTML = `
                         <div class="season-poster-container">
-                            <img src="${posterUrl}" class="season-poster" alt="${season.title}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(season.title)}'">
+                            <img src="${posterUrl}" class="season-poster" alt="${esc(season.title)}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/400x600/0E1413/3ECF8E?text=${encodeURIComponent(season.title)}'">
                         </div>
                         <div class="season-info">
-                            <div class="season-title">${season.title}</div>
+                            <div class="season-title">${esc(season.title)}</div>
                             <span class="watch-dot ${season.is_watched ? 'watched' : ''}">${season.is_watched ? 'Watched' : 'Unwatched'}</span>
                         </div>
                     `;
@@ -738,17 +745,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     const sizeFormatted = formatBytes(ep.original_size);
                     
                     let actionButton = "";
+                    const epLabel = jsArg(showTitle + ' - S01E' + ep.episode_number);
+                    const epArgs = `${jsArg(serverType)}, ${jsArg(ep.id)}, ${epLabel}, ${jsArg(ep.file_path)}, ${Number(ep.original_size) || 0}`;
                     if (ep.status === "archived") {
-                        actionButton = `<button class="btn btn-success btn-xs" onclick="window.triggerEpisodeAction('restore', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-rotate-left"></i> Restore</button>`;
-                        actionButton += ` <button class="btn btn-secondary btn-xs" onclick="window.executeRegenerateFor('${serverType}','${ep.id}','poster')"><i class="fa-solid fa-image"></i></button>`
-                                     + ` <button class="btn btn-secondary btn-xs" onclick="window.executeRegenerateFor('${serverType}','${ep.id}','video')"><i class="fa-solid fa-video"></i></button>`;
+                        actionButton = `<button class="btn btn-success btn-xs" onclick="window.triggerEpisodeAction('restore', ${epArgs})"><i class="fa-solid fa-rotate-left"></i> Restore</button>`;
+                        actionButton += ` <button class="btn btn-secondary btn-xs" onclick="window.executeRegenerateFor(${jsArg(serverType)},${jsArg(ep.id)},'poster')"><i class="fa-solid fa-image"></i></button>`
+                                     + ` <button class="btn btn-secondary btn-xs" onclick="window.executeRegenerateFor(${jsArg(serverType)},${jsArg(ep.id)},'video')"><i class="fa-solid fa-video"></i></button>`;
                     } else {
-                        actionButton = `<button class="btn btn-primary btn-xs" onclick="window.triggerEpisodeAction('specter', '${serverType}', '${ep.id}', '${showTitle} - S01E${ep.episode_number}', '${ep.file_path.replace(/\\/g, '\\\\')}', ${ep.original_size})"><i class="fa-solid fa-ghost"></i> Specter</button>`;
+                        actionButton = `<button class="btn btn-primary btn-xs" onclick="window.triggerEpisodeAction('specter', ${epArgs})"><i class="fa-solid fa-ghost"></i> Specter</button>`;
                     }
 
                     row.innerHTML = `
                         <td>${ep.episode_number}</td>
-                        <td>${ep.title}</td>
+                        <td>${esc(ep.title)}</td>
                         <td>${sizeFormatted}</td>
                         <td><span class="watch-dot ${ep.is_watched ? 'watched' : ''}">${ep.is_watched ? 'Watched' : 'Unwatched'}</span></td>
                         <td><span class="media-badge ${ep.status}" style="position: static; display: inline-block;">${ep.status.toUpperCase()}</span></td>
@@ -777,7 +786,7 @@ document.addEventListener("DOMContentLoaded", () => {
         pendingAction = { type: action, serverType, itemId, title, filePath, size };
         
         const isRestore = action === "restore";
-        document.getElementById("confirm-msg").innerHTML = `Are you sure you want to <strong>${isRestore ? 'RESTORE' : 'SPECTER'}</strong> item:<br><strong>${title}</strong>?`;
+        document.getElementById("confirm-msg").innerHTML = `Are you sure you want to <strong>${isRestore ? 'RESTORE' : 'SPECTER'}</strong> item:<br><strong>${esc(title)}</strong>?`;
         document.getElementById("confirm-file-path").textContent = filePath || "N/A";
         document.getElementById("confirm-saved-size").textContent = formatBytes(size);
         
@@ -1234,9 +1243,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     let html = '';
                     items.forEach(it => {
                         html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--line);">
-                            <span><strong>${it.title}</strong> ${it.year ? '('+it.year+')' : ''}</span>
-                            <span style="color:var(--red);font-size:0.72rem;">Missing: ${it.missing_servers.join(', ')}</span>
-                            <button class="btn btn-primary btn-xs mm-match-btn" data-title="${it.title}" data-year="${it.year || ''}" data-media="${it.media_type}" data-present='${JSON.stringify(it.server_items)}' data-missing='${JSON.stringify(it.missing_servers)}'>Match</button>
+                            <span><strong>${esc(it.title)}</strong> ${it.year ? '('+esc(it.year)+')' : ''}</span>
+                            <span style="color:var(--red);font-size:0.72rem;">Missing: ${esc(it.missing_servers.join(', '))}</span>
+                            <button class="btn btn-primary btn-xs mm-match-btn" data-title="${esc(it.title)}" data-year="${esc(it.year || '')}" data-media="${esc(it.media_type)}" data-present='${esc(JSON.stringify(it.server_items))}' data-missing='${esc(JSON.stringify(it.missing_servers))}'>Match</button>
                         </div>`;
                     });
                     list.innerHTML = html;
@@ -1264,12 +1273,12 @@ document.addEventListener("DOMContentLoaded", () => {
     function openMatchPicker(title, year, mediaType, present, missing) {
         const list = document.getElementById("mm-unmatched-list");
         let html = `<div class="card-glass" style="margin-top:0.5rem;padding:0.8rem;">
-            <strong>Match: ${title}${year ? ' ('+year+')' : ''}</strong>
-            <p style="font-size:0.72rem;color:var(--text-3);">Present on: ${Object.keys(present).join(', ')}. Select the corresponding item on each missing server.</p>`;
+            <strong>Match: ${esc(title)}${year ? ' ('+esc(year)+')' : ''}</strong>
+            <p style="font-size:0.72rem;color:var(--text-3);">Present on: ${esc(Object.keys(present).join(', '))}. Select the corresponding item on each missing server.</p>`;
         missing.forEach(mt => {
-            html += `<div style="margin-top:0.5rem;"><strong style="color:var(--text-2);">${mt}:</strong>
+            html += `<div style="margin-top:0.5rem;"><strong style="color:var(--text-2);">${esc(mt)}:</strong>
                 <div style="display:flex;gap:0.3rem;">
-                    <input type="text" class="form-input mm-search" data-server="${mt}" placeholder="Search on ${mt}…" style="flex:1;">
+                    <input type="text" class="form-input mm-search" data-server="${esc(mt)}" placeholder="Search on ${esc(mt)}…" style="flex:1;">
                     <div class="mm-results-${mt.replace(/[^a-z]/gi,'')}" style="font-size:0.72rem;color:var(--text-2);"></div>
                 </div></div>`;
         });
@@ -1292,7 +1301,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     .then(r => r.json())
                     .then(results => {
                         const resDiv = list.querySelector(`.mm-results-${server.replace(/[^a-z]/gi,'')}`);
-                        let rh = results.map(r => `<div style="cursor:pointer;padding:0.2rem 0;" data-id="${r.id}" data-title="${r.title}" class="mm-candidate">${r.title} ${r.year ? '('+r.year+')' : ''}</div>`).join('');
+                        let rh = results.map(r => `<div style="cursor:pointer;padding:0.2rem 0;" data-id="${esc(r.id)}" data-title="${esc(r.title)}" class="mm-candidate">${esc(r.title)} ${r.year ? '('+esc(r.year)+')' : ''}</div>`).join('');
                         resDiv.innerHTML = rh;
                         resDiv.querySelectorAll(".mm-candidate").forEach(d => {
                             d.addEventListener("click", () => {
@@ -1338,10 +1347,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
                 let html = '';
                 Object.entries(groups).forEach(([gid, members]) => {
-                    const titles = members.map(m => `<span>${m.title || m.item_id} (${m.server_type})</span>`).join(', ');
+                    const titles = members.map(m => `<span>${esc(m.title || m.item_id)} (${esc(m.server_type)})</span>`).join(', ');
                     html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--line);">
                         <span style="font-size:0.82rem;">${titles}</span>
-                        <button class="btn btn-danger btn-xs" onclick="window.unlinkMatch('${gid}')"><i class="fa-solid fa-unlink"></i> Unlink</button>
+                        <button class="btn btn-danger btn-xs" onclick="window.unlinkMatch(${jsArg(gid)})"><i class="fa-solid fa-unlink"></i> Unlink</button>
                     </div>`;
                 });
                 list.innerHTML = html;

@@ -5,6 +5,11 @@ All notable changes to **MediaSpecter** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v2.2.1] - 2026-06-15
+
+### Security
+- **Escape media-provided strings in the dashboard (XSS hardening).** Titles, years, and file paths come from your media servers / metadata providers, but were being concatenated into HTML/`onclick` handlers unescaped — a maliciously-named item could have run script in the authenticated dashboard (which holds server tokens). Added `esc()` (HTML) and `jsArg()` (JS-string) helpers and applied them across the movie/show/season/episode cards, the confirm dialog, and the new Manual Match UI.
+
 ## [v2.2.0] - 2026-06-15
 
 ### Added
