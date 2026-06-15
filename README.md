@@ -101,6 +101,51 @@ template UI using the same image and the two volume mappings above.
 
 ---
 
+## Migrating from MediaSpektor (the old name)
+
+MediaSpektor was renamed to **MediaSpecter** in v2.0.0. Because the Docker image and Unraid
+Community Applications template both changed name, Unraid treats the new app as a **separate
+install** — it does **not** auto-upgrade in place, and your old data isn't carried over until you
+move it. There is no in-app migration prompt; you do it once at the filesystem level.
+
+Everything you care about lives in the old install's `/config` appdata folder:
+
+- `config.yaml` — servers, tokens, rules, integrations
+- `mediaspektor.db` — archive state (archived items, rollup badges, manual matches)
+- `backups/` — original posters + overlays (needed for **Restore** and badge-revert)
+
+Paths stored *inside* the database are container-internal (`/config/backups/…` for posters,
+`/data/…` for media), so they stay valid as long as the new container mounts `/config` and `/data`
+the same way — nothing inside the DB needs editing.
+
+**Option A — reuse the old appdata (easiest, no copying).** Point the new MediaSpecter container's
+`/config` at the *old* folder (e.g. `/mnt/user/appdata/mediaspektor`). On first start MediaSpecter
+auto-renames `mediaspektor.db → mediaspecter.db` in place; config, DB, and backups are already there.
+(Only cosmetic downside: the folder keeps the old name.)
+
+**Option B — copy into a fresh `mediaspecter` appdata folder.** Stop the MediaSpecter container, then
+on the Unraid terminal:
+
+```bash
+cp -a /mnt/user/appdata/mediaspektor/config.yaml  /mnt/user/appdata/mediaspecter/config.yaml
+cp -a /mnt/user/appdata/mediaspektor/backups/.      /mnt/user/appdata/mediaspecter/backups/
+# copy the DB AS the new name (overwrites the fresh empty one)
+cp    /mnt/user/appdata/mediaspektor/mediaspektor.db /mnt/user/appdata/mediaspecter/mediaspecter.db
+# let the container user own it (Unraid default 99:100 — match your PUID/PGID)
+chown -R 99:100 /mnt/user/appdata/mediaspecter
+```
+
+Then start MediaSpecter. The dashboard's **Total reclaimed** and the Movies/TV grids should show your
+previously-archived items.
+
+> **Gotcha:** copy the database *as* `mediaspecter.db` (as above). If you copy it as
+> `mediaspektor.db` while a `mediaspecter.db` already exists in the folder, the automatic rename is
+> skipped (it only runs when no `mediaspecter.db` is present) and you'll keep the empty one. If
+> posters or Restore misbehave afterward, it's almost always a `/config` ownership issue — re-run the
+> `chown` with your actual PUID/PGID.
+
+---
+
 ## Configuration
 
 Copy the template configuration file:
