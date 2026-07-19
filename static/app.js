@@ -987,6 +987,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById("safety-backup-dir").value = safety.backup_directory || "";
                 document.getElementById("safety-allow-auto").checked = !!safety.allow_automated_archival;
 
+                // Populate Archive Tagging
+                const tagging = config.tagging || {};
+                document.getElementById("tag-enabled").checked = !!tagging.enabled;
+                document.getElementById("tag-name").value = tagging.tag || "archived";
+
                 // Populate Integrations
                 const integrations = config.integrations || {};
                 const radarr = integrations.radarr || {};
@@ -1093,6 +1098,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 tmdb: {
                     api_key: document.getElementById("int-tmdb-key").value.trim()
                 }
+            },
+            tagging: {
+                enabled: document.getElementById("tag-enabled").checked,
+                tag: document.getElementById("tag-name").value.trim() || "archived"
             },
             safety: {
                 dry_run: document.getElementById("safety-dry-run").checked,

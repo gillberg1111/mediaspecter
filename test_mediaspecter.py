@@ -1313,6 +1313,222 @@ class TestPosterUploadEncoding(unittest.TestCase):
             self.assertEqual(mock_post.call_args.kwargs["data"], base64.b64encode(raw))
 
 
+class TestArchiveTagging(unittest.TestCase):
+    """Issue #12: optional custom tag stamped on archived items, removed on restore."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self.temp_config = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False)
+        self.temp_config.close()
+        self.config_data = {
+            # enabled: False — real connectors are never built; mocks are injected
+            # via _make_specter(*servers) instead.
+            "servers": [
+                {"type": "plex", "enabled": False, "url": "http://mock-plex", "token": "t", "libraries": ["Movies"]},
+                {"type": "jellyfin", "enabled": False, "url": "http://mock-jf", "username": "u", "password": "p", "libraries": ["Movies"]},
+            ],
+            "rules": {"min_age_days": 0, "exclude_labels": [], "exclude_genres": [], "dummy_threshold_mb": 0},
+            "safety": {"dry_run": False, "backup_original_media": False, "allow_automated_archival": True},
+            "integrations": {},
+            "tagging": {"enabled": True, "tag": "archived"},
+        }
+
+    def tearDown(self):
+        for p in (self.temp_db.name, self.temp_config.name):
+            if os.path.exists(p):
+                os.unlink(p)
+
+    def _make_specter(self, *servers):
+        import yaml
+        with open(self.temp_config.name, "w") as f:
+            yaml.safe_dump(self.config_data, f)
+        specter = MediaSpecter(self.temp_config.name)
+        specter.db = Database(self.temp_db.name)
+        specter.servers = list(servers)
+        return specter
+
+    @staticmethod
+    def _mock_server(server_type, item):
+        srv = MagicMock()
+        srv.server_type = server_type
+        srv.get_item_metadata.return_value = item
+        srv.find_item.return_value = item
+        srv.download_poster.return_value = True
+        srv.upload_poster.return_value = True
+        srv.add_tag.return_value = True
+        srv.remove_tag.return_value = True
+        return srv
+
+    def _archive_movie(self, specter):
+        with patch.object(MediaSpecter, "_replace_with_dummy", return_value=None), \
+             patch("mediaspecter.shutil.copy2"), \
+             patch("builtins.open"):
+            return specter.archive_item("plex", "1")
+
+    def test_archive_item_tags_all_matched_servers(self):
+        item = {
+            "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": "123", "imdb": None, "tvdb": None},
+        }
+        jf_item = dict(item, id="99")
+        plex = self._mock_server("plex", item)
+        jf = self._mock_server("jellyfin", jf_item)
+        specter = self._make_specter(plex, jf)
+
+        result = self._archive_movie(specter)
+        self.assertTrue(result["success"])
+        plex.add_tag.assert_called_once_with("1", "archived")
+        jf.add_tag.assert_called_once_with("99", "archived")
+
+    def test_archive_item_skips_tagging_when_disabled(self):
+        self.config_data["tagging"] = {"enabled": False, "tag": "archived"}
+        item = {
+            "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": None, "imdb": None, "tvdb": None},
+        }
+        plex = self._mock_server("plex", item)
+        specter = self._make_specter(plex)
+
+        result = self._archive_movie(specter)
+        self.assertTrue(result["success"])
+        plex.add_tag.assert_not_called()
+
+    def test_tag_failure_warns_but_archive_succeeds(self):
+        item = {
+            "id": "1", "title": "Movie", "type": "movie", "file_path": "/data/Movie.mp4",
+            "original_size": 100_000_000, "last_watched": None, "genres": [], "labels": [],
+            "external_ids": {"tmdb": None, "imdb": None, "tvdb": None},
+        }
+        plex = self._mock_server("plex", item)
+        plex.add_tag.return_value = False
+        specter = self._make_specter(plex)
+
+        result = self._archive_movie(specter)
+        self.assertTrue(result["success"])
+        self.assertTrue(any("tag" in str(w).lower() for w in result["warnings"]))
+
+    def test_restore_removes_tag(self):
+        plex = self._mock_server("plex", None)
+        specter = self._make_specter(plex)
+        specter.db.insert(
+            server_type="plex", server_item_id="1", title="Movie", media_type="movie",
+            original_path="/data/Movie.mp4", original_size_bytes=100, dummy_size_bytes=10,
+            backup_poster_path=None, status="archived",
+        )
+        with patch("os.path.exists", return_value=False):
+            self.assertTrue(specter.restore("plex", "1"))
+        plex.remove_tag.assert_called_once_with("1", "archived")
+
+    def test_blank_tag_falls_back_to_default(self):
+        self.config_data["tagging"] = {"enabled": True, "tag": "   "}
+        specter = self._make_specter()
+        self.assertEqual(specter._archive_tag(), "archived")
+
+    def test_jellyfin_add_tag_posts_full_dto(self):
+        import mediaspecter
+        with patch.object(mediaspecter.JellyfinConnector, "authenticate"):
+            jf = mediaspecter.JellyfinConnector(
+                {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
+            )
+        jf.api_key = "key"
+        jf.user_id = "uid"
+
+        calls = []
+        get_resp = MagicMock()
+        get_resp.json.return_value = {"Id": "42", "Name": "Movie", "Tags": ["existing"]}
+
+        def fake_request(method, path, json_data=None, **kw):
+            calls.append((method, path, json_data))
+            return get_resp
+
+        with patch.object(jf, "_request", side_effect=fake_request):
+            self.assertTrue(jf.add_tag("42", "archived"))
+
+        posts = [c for c in calls if c[0] == "POST"]
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0][1], "Items/42")
+        self.assertEqual(posts[0][2]["Tags"], ["existing", "archived"])
+        self.assertEqual(posts[0][2]["Name"], "Movie")  # full DTO posted back
+
+    def test_jellyfin_add_tag_noop_when_already_present(self):
+        import mediaspecter
+        with patch.object(mediaspecter.JellyfinConnector, "authenticate"):
+            jf = mediaspecter.JellyfinConnector(
+                {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
+            )
+        jf.api_key = "key"
+        jf.user_id = "uid"
+
+        get_resp = MagicMock()
+        get_resp.json.return_value = {"Id": "42", "Tags": ["Archived"]}
+        with patch.object(jf, "_request", return_value=get_resp) as mock_req:
+            self.assertTrue(jf.add_tag("42", "archived"))  # case-insensitive match
+        posted = [c for c in mock_req.call_args_list if c.args and c.args[0] == "POST"]
+        self.assertEqual(posted, [])
+
+    def test_jellyfin_remove_tag(self):
+        import mediaspecter
+        with patch.object(mediaspecter.JellyfinConnector, "authenticate"):
+            jf = mediaspecter.JellyfinConnector(
+                {"type": "jellyfin", "url": "http://jf", "username": "u", "password": "p"}
+            )
+        jf.api_key = "key"
+        jf.user_id = "uid"
+
+        calls = []
+        get_resp = MagicMock()
+        get_resp.json.return_value = {"Id": "42", "Tags": ["keep", "Archived"]}
+
+        def fake_request(method, path, json_data=None, **kw):
+            calls.append((method, path, json_data))
+            return get_resp
+
+        with patch.object(jf, "_request", side_effect=fake_request):
+            self.assertTrue(jf.remove_tag("42", "archived"))
+
+        posts = [c for c in calls if c[0] == "POST"]
+        self.assertEqual(posts[0][2]["Tags"], ["keep"])
+
+    def test_emby_tag_endpoints(self):
+        import mediaspecter
+        with patch.object(mediaspecter.EmbyConnector, "_resolve_user_id"):
+            emby = mediaspecter.EmbyConnector(
+                {"type": "emby", "url": "http://emby", "api_key": "k", "user_id": "uid"}
+            )
+        with patch("mediaspecter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(raise_for_status=lambda: None)
+            self.assertTrue(emby.add_tag("9", "archived"))
+            self.assertTrue(emby.remove_tag("9", "archived"))
+        add_call, remove_call = mock_post.call_args_list
+        self.assertTrue(add_call.args[0].endswith("Items/9/Tags/Add"))
+        self.assertEqual(add_call.kwargs["json"], {"Tags": [{"Name": "archived"}]})
+        self.assertTrue(remove_call.args[0].endswith("Items/9/Tags/Remove"))
+        self.assertEqual(remove_call.kwargs["json"], {"Tags": [{"Name": "archived"}]})
+
+    def test_plex_add_and_remove_label(self):
+        import mediaspecter
+        with patch("mediaspecter.PlexServer"):
+            plex = mediaspecter.PlexConnector(
+                {"type": "plex", "enabled": True, "url": "http://plex", "token": "t", "libraries": []}
+            )
+        mock_item = MagicMock()
+        mock_item.labels = []
+        plex._server = MagicMock()
+        plex._server.fetchItem.return_value = mock_item
+
+        self.assertTrue(plex.add_tag("7", "archived"))
+        mock_item.addLabel.assert_called_once_with("archived")
+
+        lbl = MagicMock()
+        lbl.tag = "Archived"
+        mock_item.labels = [lbl]
+        self.assertTrue(plex.remove_tag("7", "archived"))
+        mock_item.removeLabel.assert_called_once_with("Archived")
+
+
 class TestRadarrMatching(unittest.TestCase):
     """Radarr match must survive Radarr and the media server mounting different roots."""
 

@@ -20,6 +20,13 @@ servers:
     user_id: "YOUR_EMBY_USER_ID"          # username or user GUID (resolved at startup)
     libraries: ["Movies", "TV Shows"]     # Emby's default TV library is named "TV Shows"
 
+tagging:
+  # Optional (issue #12). Stamp every archived item with a metadata tag on
+  # Jellyfin/Emby (a label on Plex) so you can filter or hide archived media,
+  # e.g. via Jellyfin's per-user "Block items with tags". Removed on restore.
+  enabled: false
+  tag: "archived"
+
 rules:
   min_age_days: 7
   exclude_labels: ["keep"]

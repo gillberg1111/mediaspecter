@@ -20,6 +20,7 @@ To visually flag archived items, MediaSpecter synthesizes and uploads a clean tr
   - Option to move original media files to cold storage backups.
   - One-command restoration (`--restore`) to re-upload original posters and update the database state.
 - ⚙️ **Custom Exclusion Rules**: Filter candidates by watch age (`min_age_days`), metadata labels, genres, or directory paths.
+- 🏷️ **Archive Tagging** *(optional)*: Stamp every archived item with a custom metadata tag on Jellyfin/Emby (a label on Plex) and remove it again on restore — perfect for hiding archived media from users, e.g. via Jellyfin's per-user "Block items with tags" setting.
 
 ---
 
@@ -177,6 +178,10 @@ servers:
     api_key: "YOUR_EMBY_API_KEY"
     user_id: "YOUR_EMBY_USER_ID"         # username or user GUID (resolved at startup)
     libraries: ["Movies", "TV Shows"]
+
+tagging:
+  enabled: false               # Optional: tag archived items so you can filter/hide them
+  tag: "archived"              # Metadata tag on Jellyfin/Emby, label on Plex; removed on restore
 
 rules:
   min_age_days: 7              # Only archive items watched at least 7 days ago

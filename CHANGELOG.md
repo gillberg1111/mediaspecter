@@ -5,6 +5,11 @@ All notable changes to **MediaSpecter** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v2.3.0] - 2026-07-18
+
+### Added
+- **Custom tag on archived media (issue #12).** New optional `tagging` config section (and an **Archive Tagging** card in Settings): when enabled, every archived item is stamped with a configurable metadata tag on Jellyfin/Emby (a label on Plex) across all matched servers, and the tag is removed again on restore. This makes archived items filterable server-side — e.g. Jellyfin's per-user "Block items with tags" can hide them from a user in one click. Jellyfin tagging updates the item via the full-DTO `POST /Items/{id}` (its user must be an administrator); Emby uses its native `Tags/Add`/`Tags/Remove` endpoints; Plex uses labels. Tag failures never block or roll back the archive itself — they surface as warnings.
+
 ## [v2.2.1] - 2026-06-15
 
 ### Security

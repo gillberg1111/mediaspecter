@@ -787,6 +787,14 @@ class BaseMediaServer(ABC):
     @abstractmethod
     def trigger_library_scan(self, media_type: str | None = None, item_id: str | None = None) -> None: ...
 
+    def add_tag(self, item_id: str, tag: str) -> bool:
+        """Apply a metadata tag (Plex: label) to an item. True on success."""
+        return False
+
+    def remove_tag(self, item_id: str, tag: str) -> bool:
+        """Remove a metadata tag (Plex: label) from an item. True on success."""
+        return False
+
     def get_movies(self, library_names: list[str]) -> list[dict[str, Any]]:
         return []
 
@@ -920,6 +928,37 @@ class PlexConnector(BaseMediaServer):
             return True
         except Exception as exc:
             logger.error("Plex: upload poster failed for %s: %s", item_id, exc)
+            return False
+
+    def add_tag(self, item_id: str, tag: str) -> bool:
+        # Plex's equivalent of a tag is a label — filterable in every client and
+        # usable in smart collections / managed-user restrictions.
+        try:
+            item = self._server.fetchItem(self._resolve_id(item_id))
+            if not hasattr(item, "addLabel"):
+                logger.warning("Plex: item %s (%s) does not support labels", item_id, getattr(item, "type", "?"))
+                return False
+            existing = {str(l.tag).lower() for l in (getattr(item, "labels", None) or [])}
+            if tag.lower() not in existing:
+                item.addLabel(tag)
+            return True
+        except Exception as exc:
+            logger.warning("Plex: failed to add label '%s' to %s: %s", tag, item_id, exc)
+            return False
+
+    def remove_tag(self, item_id: str, tag: str) -> bool:
+        try:
+            item = self._server.fetchItem(self._resolve_id(item_id))
+            if not hasattr(item, "removeLabel"):
+                return False
+            # Match case-insensitively but remove the label as the server stores it.
+            for lbl in (getattr(item, "labels", None) or []):
+                if str(lbl.tag).lower() == tag.lower():
+                    item.removeLabel(str(lbl.tag))
+                    break
+            return True
+        except Exception as exc:
+            logger.warning("Plex: failed to remove label '%s' from %s: %s", tag, item_id, exc)
             return False
 
     def trigger_library_scan(self, media_type: str | None = None, item_id: str | None = None) -> None:
@@ -1334,6 +1373,37 @@ class JellyfinConnector(BaseMediaServer):
             logger.error("Jellyfin: upload poster failed for %s: %s", item_id, exc)
             return False
 
+    def add_tag(self, item_id: str, tag: str) -> bool:
+        return self._edit_tags(item_id, tag, add=True)
+
+    def remove_tag(self, item_id: str, tag: str) -> bool:
+        return self._edit_tags(item_id, tag, add=False)
+
+    def _edit_tags(self, item_id: str, tag: str, add: bool) -> bool:
+        """Jellyfin has no dedicated tag endpoint: fetch the full item DTO,
+        adjust Tags, and POST the whole object back to /Items/{id} (the update
+        endpoint replaces metadata with what's posted, so a partial body would
+        wipe fields). Requires the configured user to be an administrator."""
+        try:
+            item = self._get(f"Users/{self.user_id}/Items/{item_id}").json()
+            tags = list(item.get("Tags") or [])
+            present = any(t.lower() == tag.lower() for t in tags)
+            if add and not present:
+                tags.append(tag)
+            elif not add and present:
+                tags = [t for t in tags if t.lower() != tag.lower()]
+            else:
+                return True  # already in the desired state
+            item["Tags"] = tags
+            self._request("POST", f"Items/{item_id}", json_data=item)
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Jellyfin: failed to %s tag '%s' on %s: %s",
+                "add" if add else "remove", tag, item_id, exc,
+            )
+            return False
+
     def trigger_library_scan(self, media_type: str | None = None, item_id: str | None = None) -> None:
         try:
             if item_id:
@@ -1667,6 +1737,29 @@ class EmbyConnector(BaseMediaServer):
         resp = requests.get(url, headers=self.headers, params=params or {}, timeout=30)
         resp.raise_for_status()
         return resp
+
+    def _post(self, path: str, json_data: Any = None) -> Any:
+        url = urljoin(self.base_url + "/", path.lstrip("/"))
+        resp = requests.post(url, headers=self.headers, json=json_data, timeout=30)
+        resp.raise_for_status()
+        return resp
+
+    def add_tag(self, item_id: str, tag: str) -> bool:
+        # Emby (unlike Jellyfin) ships dedicated tag endpoints.
+        try:
+            self._post(f"Items/{item_id}/Tags/Add", {"Tags": [{"Name": tag}]})
+            return True
+        except Exception as exc:
+            logger.warning("Emby: failed to add tag '%s' to %s: %s", tag, item_id, exc)
+            return False
+
+    def remove_tag(self, item_id: str, tag: str) -> bool:
+        try:
+            self._post(f"Items/{item_id}/Tags/Remove", {"Tags": [{"Name": tag}]})
+            return True
+        except Exception as exc:
+            logger.warning("Emby: failed to remove tag '%s' from %s: %s", tag, item_id, exc)
+            return False
 
     def get_watched_items(
         self, library_names: list[str]
@@ -2660,6 +2753,7 @@ class MediaSpecter:
                         backup_media_path=backup_media_path,
                         status="archived",
                     )
+                    self._apply_archive_tag(server, item_id)
 
                     # 5. Unmonitor in *Arr
                     if media_type == "movie" and self.radarr:
@@ -2738,6 +2832,7 @@ class MediaSpecter:
                     logger.info("Restored poster for %s on %s", sib.get("title"), srv_type)
                 except Exception as exc:
                     logger.error("Failed to restore poster for %s on %s: %s", sib.get("title"), srv_type, exc)
+            self._remove_archive_tag(server, srv_item_id)
             try:
                 server.trigger_library_scan(media_type=sib.get("media_type"), item_id=srv_item_id)
             except Exception as exc:
@@ -3050,6 +3145,34 @@ class MediaSpecter:
         self._reconcile_show(server, show, results, force=True, only_season=only_season)
         return results
 
+    def _archive_tag(self) -> str | None:
+        """The tag to stamp on archived items (issue #12), or None when disabled."""
+        cfg = self.config.get("tagging", {}) or {}
+        if not cfg.get("enabled", False):
+            return None
+        return str(cfg.get("tag") or "").strip() or "archived"
+
+    def _apply_archive_tag(self, server, item_id, results: dict | None = None) -> None:
+        tag = self._archive_tag()
+        if not tag:
+            return
+        if server.add_tag(item_id, tag):
+            logger.info("Tagged %s item %s with '%s'", server.server_type, item_id, tag)
+        else:
+            msg = f"Could not tag {server.server_type} item {item_id} with '{tag}'"
+            logger.warning(msg)
+            if results is not None:
+                results.setdefault("warnings", []).append(msg)
+
+    def _remove_archive_tag(self, server, item_id) -> None:
+        tag = self._archive_tag()
+        if not tag:
+            return
+        if server.remove_tag(item_id, tag):
+            logger.info("Removed tag '%s' from %s item %s", tag, server.server_type, item_id)
+        else:
+            logger.warning("Could not remove tag '%s' from %s item %s", tag, server.server_type, item_id)
+
     def _replace_with_dummy(
         self, file_path: str, dummy_bytes: bytes, backup_target: str | None = None
     ) -> str | None:
@@ -3245,6 +3368,7 @@ class MediaSpecter:
                     backup_media_path=backup_media_path if server is source else None,
                     status="archived",
                 )
+                self._apply_archive_tag(server, t["local_id"], results)
                 if not skip_scan:
                     try:
                         server.trigger_library_scan(media_type=media_type, item_id=t["local_id"])
