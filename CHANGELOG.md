@@ -5,6 +5,11 @@ All notable changes to **MediaSpecter** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a simple `v0.x` release line.
 
+## [v2.3.1] - 2026-07-18
+
+### Fixed
+- **"Failed to Queue Action" after migrating from MediaSpektor (stale cached UI).** A browser (or home-screen PWA) that previously used the MediaSpektor image could keep serving the old cached `app.js` against the new server; that script POSTs the pre-v2.0.0 `/api/spektor` path, which 404'd — breaking archiving while the rest of the dashboard looked fine. Two-part fix: the server now keeps `/api/spektor` and `/api/spektor-bulk` as hidden aliases of the current routes (auth-gated, excluded from the schema), and the app shell is served with `Cache-Control: no-cache` with the JS/CSS referenced via a versioned `?v=` query so every future upgrade forces a fresh script. A hard refresh (Ctrl/Cmd+Shift+R) also clears it immediately; documented in the migration guide.
+
 ## [v2.3.0] - 2026-07-18
 
 ### Added

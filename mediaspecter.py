@@ -3519,7 +3519,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def read_root():
-    return FileResponse("static/index.html")
+    # no-cache = always revalidate the app shell. Combined with the versioned
+    # ?v= query on the JS/CSS tags, this stops a browser from pairing a fresh
+    # index.html with a stale cached app.js after an upgrade (which is how a
+    # migrated MediaSpektor install ended up POSTing the removed /api/spektor).
+    return FileResponse("static/index.html", headers={"Cache-Control": "no-cache"})
 
 class LoginReq(BaseModel):
     username: str
@@ -3820,6 +3824,10 @@ def run_bg_restore(server_type: str, item_id: str):
     except Exception as exc:
         logger.error("Rollup reconcile after action failed: %s", exc)
 
+# /api/spektor is the pre-v2.0.0 route name. Keep it as an alias: a browser
+# that migrated from the MediaSpektor image can serve a stale cached app.js
+# that still POSTs the old path, and a 404 there breaks archiving entirely.
+@app.post("/api/spektor", dependencies=[Depends(verify_auth)], include_in_schema=False)
 @app.post("/api/specter", dependencies=[Depends(verify_auth)])
 def trigger_specter(req: ActionReq, bg_tasks: BackgroundTasks):
     bg_tasks.add_task(run_bg_specter, req.server_type, str(req.item_id))
@@ -3843,6 +3851,8 @@ def run_bg_bulk(server_type: str, show_id: str, season_id: str | None):
     except Exception as exc:
         logger.error("Rollup reconcile after action failed: %s", exc)
 
+# Pre-v2.0.0 alias — see /api/spektor above.
+@app.post("/api/spektor-bulk", dependencies=[Depends(verify_auth)], include_in_schema=False)
 @app.post("/api/specter-bulk", dependencies=[Depends(verify_auth)])
 def trigger_bulk(req: BulkSpecterReq, bg_tasks: BackgroundTasks):
     bg_tasks.add_task(run_bg_bulk, req.server_type, req.show_id, req.season_id)

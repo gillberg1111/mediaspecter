@@ -145,6 +145,13 @@ previously-archived items.
 > posters or Restore misbehave afterward, it's almost always a `/config` ownership issue — re-run the
 > `chown` with your actual PUID/PGID.
 
+> **Gotcha #2 — stale browser cache:** if the new dashboard loads but actions fail with
+> *"Failed to Queue Action"* (the log shows `POST /api/spektor … 404`), your browser is running the
+> **old MediaSpektor script from its cache** against the new server (common when both apps ran on the
+> same host/port). Since v2.3.1 the server keeps the old API path as an alias *and* cache-busts its
+> assets, so this heals itself on upgrade — but a hard refresh (**Ctrl/Cmd+Shift+R**), or "Empty cache
+> and hard reload" / reinstalling the home-screen PWA, gets you the current UI immediately.
+
 ---
 
 ## Configuration

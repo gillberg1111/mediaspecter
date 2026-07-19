@@ -566,6 +566,27 @@ class TestFastAPI(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["success"], True)
 
+    def test_legacy_spektor_route_aliases(self):
+        # A browser that migrated from the MediaSpektor image can still run a
+        # stale cached app.js that POSTs the pre-v2.0.0 paths; they must not 404.
+        with patch.object(self.specter, "archive_item"):
+            resp = self.client.post("/api/spektor", json={"server_type": "plex", "item_id": "1"})
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["success"], True)
+
+        with patch.object(self.specter, "bulk_episode_plan", return_value={"item_ids": []}), \
+             patch.object(self.specter, "bulk_archive"):
+            resp = self.client.post("/api/spektor-bulk", json={"server_type": "plex", "show_id": "2"})
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["success"], True)
+
+    def test_root_is_no_cache(self):
+        # The app shell must always revalidate so a fresh index.html is never
+        # paired with a stale cached app.js after an upgrade.
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("Cache-Control"), "no-cache")
+
     def test_poster_proxy(self):
         fake_item = MagicMock()
         fake_item.posterUrl = "http://mock-plex/poster.jpg"
